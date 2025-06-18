@@ -103,10 +103,12 @@ defmodule DevRunner do
     end
   end
   defp dialyzer_check({:error, output}) do
-    if String.contains?(output, "warnings were emitted") do
-      :warning  # Dialyzer warnings are non-critical
-    else
-      :error
+    cond do
+      # Real errors (like type violations, function call failures)
+      String.contains?(output, ":call") or String.contains?(output, "will not succeed") -> :error
+      # Just warnings (like contract_supertype)
+      String.contains?(output, "warnings were emitted") -> :warning
+      true -> :error
     end
   end
 

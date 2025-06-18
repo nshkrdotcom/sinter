@@ -35,3 +35,5 @@ elixact-*.tar
 repomix-output.xml
 
 /pydantic/
+
+dialyzer_output.log
