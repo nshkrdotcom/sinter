@@ -33,19 +33,19 @@ defmodule Sinter.Types do
   alias Sinter.Error
 
   @type type_spec ::
-    atom() |
-    {atom(), type_spec()} |
-    {atom(), type_spec(), keyword()} |
-    {atom(), [type_spec()]} |
-    {atom(), {type_spec(), type_spec()}}
+          atom()
+          | {atom(), type_spec()}
+          | {atom(), type_spec(), keyword()}
+          | {atom(), [type_spec()]}
+          | {atom(), {type_spec(), type_spec()}}
 
   @type type_definition ::
-    {:type, atom(), keyword()} |
-    {:array, type_definition(), keyword()} |
-    {:map, {type_definition(), type_definition()}, keyword()} |
-    {:union, [type_definition()], keyword()} |
-    {:tuple, [type_definition()]} |
-    {:ref, module()}
+          {:type, atom(), keyword()}
+          | {:array, type_definition(), keyword()}
+          | {:map, {type_definition(), type_definition()}, keyword()}
+          | {:union, [type_definition()], keyword()}
+          | {:tuple, [type_definition()]}
+          | {:ref, module()}
 
   @doc """
   Normalizes a type specification into a canonical type definition.
@@ -73,7 +73,8 @@ defmodule Sinter.Types do
   def normalize_type(type_spec, constraints \\ [])
 
   # Basic atom types
-  def normalize_type(type, constraints) when type in [:string, :integer, :float, :boolean, :atom, :any] do
+  def normalize_type(type, constraints)
+      when type in [:string, :integer, :float, :boolean, :atom, :any] do
     {:type, type, constraints}
   end
 
@@ -164,7 +165,7 @@ defmodule Sinter.Types do
       {:error, [%Sinter.Error{...}]}
   """
   @spec validate(type_definition(), term(), [atom()]) ::
-    {:ok, term()} | {:error, [Error.t()]}
+          {:ok, term()} | {:error, [Error.t()]}
   def validate(type_def, value, path \\ [])
 
   # Basic type validation
@@ -180,6 +181,7 @@ defmodule Sinter.Types do
     case validate_array_items(value, inner_type, path) do
       {:ok, validated_items} ->
         apply_constraints(validated_items, constraints, path)
+
       {:error, _} = error ->
         error
     end
@@ -195,6 +197,7 @@ defmodule Sinter.Types do
     case validate_map_entries(value, key_type, value_type, path) do
       {:ok, validated_map} ->
         apply_constraints(validated_map, constraints, path)
+
       {:error, _} = error ->
         error
     end
@@ -209,7 +212,9 @@ defmodule Sinter.Types do
   def validate({:union, types, _constraints}, value, path) do
     # Try each type until one succeeds
     case try_union_types(types, value, path) do
-      {:ok, validated} -> {:ok, validated}
+      {:ok, validated} ->
+        {:ok, validated}
+
       {:error, _} ->
         error = Error.new(path, :type_mismatch, "value does not match any type in union")
         {:error, [error]}
@@ -221,8 +226,13 @@ defmodule Sinter.Types do
     if tuple_size(value) == length(types) do
       validate_tuple_elements(Tuple.to_list(value), types, path)
     else
-      error = Error.new(path, :type_mismatch,
-        "expected tuple of size #{length(types)}, got size #{tuple_size(value)}")
+      error =
+        Error.new(
+          path,
+          :type_mismatch,
+          "expected tuple of size #{length(types)}, got size #{tuple_size(value)}"
+        )
+
       {:error, [error]}
     end
   end
@@ -278,6 +288,7 @@ defmodule Sinter.Types do
       {oks, []} ->
         coerced_values = Enum.map(oks, fn {:ok, val} -> val end)
         {:ok, coerced_values}
+
       {_, _errors} ->
         {:error, "failed to coerce array elements"}
     end
@@ -380,7 +391,7 @@ defmodule Sinter.Types do
   end
 
   @spec validate_array_items([term()], type_definition(), [atom()]) ::
-    {:ok, [term()]} | {:error, [Error.t()]}
+          {:ok, [term()]} | {:error, [Error.t()]}
   defp validate_array_items(items, inner_type, base_path) do
     results =
       items
@@ -394,6 +405,7 @@ defmodule Sinter.Types do
       {oks, []} ->
         validated_items = Enum.map(oks, fn {:ok, item} -> item end)
         {:ok, validated_items}
+
       {_, errors} ->
         all_errors = Enum.flat_map(errors, fn {:error, errs} -> errs end)
         {:error, all_errors}
@@ -401,7 +413,7 @@ defmodule Sinter.Types do
   end
 
   @spec validate_map_entries(map(), type_definition(), type_definition(), [atom()]) ::
-    {:ok, map()} | {:error, [Error.t()]}
+          {:ok, map()} | {:error, [Error.t()]}
   defp validate_map_entries(map, key_type, value_type, base_path) do
     results =
       Enum.map(map, fn {key, value} ->
@@ -422,7 +434,9 @@ defmodule Sinter.Types do
           oks
           |> Enum.map(fn {:ok, {k, v}} -> {k, v} end)
           |> Map.new()
+
         {:ok, validated_map}
+
       {_, errors} ->
         all_errors = Enum.flat_map(errors, fn {:error, errs} -> errs end)
         {:error, all_errors}
@@ -430,7 +444,7 @@ defmodule Sinter.Types do
   end
 
   @spec try_union_types([type_definition()], term(), [atom()]) ::
-    {:ok, term()} | {:error, [Error.t()]}
+          {:ok, term()} | {:error, [Error.t()]}
   defp try_union_types(types, value, path) do
     Enum.reduce_while(types, {:error, []}, fn type, _acc ->
       case validate(type, value, path) do
@@ -441,7 +455,7 @@ defmodule Sinter.Types do
   end
 
   @spec validate_tuple_elements([term()], [type_definition()], [atom()]) ::
-    {:ok, tuple()} | {:error, [Error.t()]}
+          {:ok, tuple()} | {:error, [Error.t()]}
   defp validate_tuple_elements(values, types, base_path) do
     results =
       values
@@ -456,6 +470,7 @@ defmodule Sinter.Types do
       {oks, []} ->
         validated_values = Enum.map(oks, fn {:ok, val} -> val end)
         {:ok, List.to_tuple(validated_values)}
+
       {_, errors} ->
         all_errors = Enum.flat_map(errors, fn {:error, errs} -> errs end)
         {:error, all_errors}
@@ -537,7 +552,8 @@ defmodule Sinter.Types do
     end
   end
 
-  defp check_constraint({:format, regex}, value, path) when is_binary(value) and is_struct(regex, Regex) do
+  defp check_constraint({:format, regex}, value, path)
+       when is_binary(value) and is_struct(regex, Regex) do
     if Regex.match?(regex, value) do
       :ok
     else
@@ -580,11 +596,9 @@ defmodule Sinter.Types do
   defp coerce_base_type(:float, value) when is_integer(value), do: {:ok, value * 1.0}
 
   defp coerce_base_type(:atom, value) when is_binary(value) do
-    try do
-      {:ok, String.to_existing_atom(value)}
-    rescue
-      ArgumentError -> {:error, "atom does not exist"}
-    end
+    {:ok, String.to_existing_atom(value)}
+  rescue
+    ArgumentError -> {:error, "atom does not exist"}
   end
 
   defp coerce_base_type(_type, _value), do: {:error, "coercion not supported"}

@@ -69,8 +69,9 @@ defmodule Sinter do
       iex> Sinter.validate_type({:array, :string}, ["hello", "world"])
       {:ok, ["hello", "world"]}
 
-      iex> Sinter.validate_type(:string, 123)
-      {:error, [%Sinter.Error{code: :type_mismatch, ...}]}
+      iex> {:error, [error]} = Sinter.validate_type(:string, 123)
+      iex> error.code
+      :type_mismatch
   """
   @spec validate_type(Sinter.Types.type_spec(), term(), validation_opts()) :: validation_result()
   def validate_type(type_spec, value, opts \\ []) do
@@ -110,7 +111,7 @@ defmodule Sinter do
       {:ok, 95}
   """
   @spec validate_value(atom(), Sinter.Types.type_spec(), term(), validation_opts()) ::
-    validation_result()
+          validation_result()
   def validate_value(field_name, type_spec, value, opts \\ []) do
     constraints = Keyword.get(opts, :constraints, [])
     validation_opts = Keyword.drop(opts, [:constraints])
@@ -141,11 +142,14 @@ defmodule Sinter do
       ...> ])
       {:ok, ["hello", 42, "test@example.com"]}
   """
-  @spec validate_many([
-    {Sinter.Types.type_spec(), term()} |
-    {atom(), Sinter.Types.type_spec(), term()} |
-    {atom(), Sinter.Types.type_spec(), term(), keyword()}
-  ], validation_opts()) :: {:ok, [term()]} | {:error, %{integer() => [Sinter.Error.t()]}}
+  @spec validate_many(
+          [
+            {Sinter.Types.type_spec(), term()}
+            | {atom(), Sinter.Types.type_spec(), term()}
+            | {atom(), Sinter.Types.type_spec(), term(), keyword()}
+          ],
+          validation_opts()
+        ) :: {:ok, [term()]} | {:error, %{integer() => [Sinter.Error.t()]}}
   def validate_many(type_value_pairs, opts \\ []) do
     results =
       type_value_pairs
@@ -173,6 +177,7 @@ defmodule Sinter do
         validated_values =
           oks
           |> Enum.map(fn {:ok, {_index, value}} -> value end)
+
         {:ok, validated_values}
 
       {_, errors} ->
@@ -180,6 +185,7 @@ defmodule Sinter do
           errors
           |> Enum.map(fn {:error, {index, errs}} -> {index, errs} end)
           |> Map.new()
+
         {:error, error_map}
     end
   end
@@ -201,11 +207,12 @@ defmodule Sinter do
       ...>   constraints: [format: ~r/@/])
       iex> email_validator.("test@example.com")
       {:ok, "test@example.com"}
-      iex> email_validator.("invalid")
-      {:error, [%Sinter.Error{...}]}
+      iex> {:error, [error]} = email_validator.("invalid")
+      iex> error.code
+      :format
   """
   @spec validator_for(Sinter.Types.type_spec(), validation_opts()) ::
-    (term() -> validation_result())
+          (term() -> validation_result())
   def validator_for(type_spec, base_opts \\ []) do
     fn value ->
       validate_type(type_spec, value, base_opts)
@@ -230,13 +237,14 @@ defmodule Sinter do
       {:ok, %{name: "Alice", age: 30}}
   """
   @spec batch_validator_for([{atom(), Sinter.Types.type_spec()}], validation_opts()) ::
-    (map() -> {:ok, map()} | {:error, [Sinter.Error.t()]})
+          (map() -> {:ok, map()} | {:error, [Sinter.Error.t()]})
   def batch_validator_for(field_specs, base_opts \\ []) do
     # Create schema once for reuse
-    fields = Enum.map(field_specs, fn
-      {name, type_spec} -> {name, type_spec, []}
-      {name, type_spec, constraints} -> {name, type_spec, constraints}
-    end)
+    fields =
+      Enum.map(field_specs, fn
+        {name, type_spec} -> {name, type_spec, []}
+        {name, type_spec, constraints} -> {name, type_spec, constraints}
+      end)
 
     schema = Schema.define(fields)
 

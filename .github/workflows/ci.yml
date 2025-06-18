@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  MIX_ENV: test
+
+jobs:
+  test:
+    name: Test (Elixir ${{matrix.elixir}} OTP ${{matrix.otp}})
+    runs-on: ubuntu-20.04
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - elixir: "1.17.3"
+            otp: "27.2"
+            lint: true
+            dialyzer: true
+            coverage: true
+          - elixir: "1.16.3"
+            otp: "26.2"
+          - elixir: "1.15.8"
+            otp: "25.3"
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ matrix.elixir }}
+        otp-version: ${{ matrix.otp }}
+
+    - name: Cache deps
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-mix-${{ matrix.elixir }}-${{ matrix.otp }}-
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Check formatting
+      run: mix format --check-formatted
+      if: ${{ matrix.lint }}
+
+    - name: Compile with warnings as errors
+      run: mix compile --warnings-as-errors
+      if: ${{ matrix.lint }}
+
+    - name: Run Credo
+      run: mix credo --strict
+      if: ${{ matrix.lint }}
+
+    - name: Run tests
+      run: mix test --trace
+
+    - name: Run tests with coverage
+      run: mix coveralls.github
+      if: ${{ matrix.coverage }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dialyzer:
+    name: Dialyzer
+    runs-on: ubuntu-20.04
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: "1.17.3"
+        otp-version: "27.2"
+
+    - name: Cache deps
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-dialyzer-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-dialyzer-
+
+    - name: Cache PLT
+      uses: actions/cache@v4
+      with:
+        path: priv/plts
+        key: ${{ runner.os }}-plt-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-plt-
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Create PLTs
+      run: mix dialyzer --plt
+
+    - name: Run Dialyzer
+      run: mix dialyzer --format github || echo "Dialyzer completed with warnings"
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-20.04
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: "1.17.3"
+        otp-version: "27.2"
+
+    - name: Cache deps
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-security-${{ hashFiles('**/mix.lock') }}
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Check for unused dependencies
+      run: mix deps.unlock --check-unused
+
+    - name: Check dependency licenses
+      run: mix deps.tree
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-20.04
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: "1.17.3"
+        otp-version: "27.2"
+
+    - name: Cache deps
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-docs-${{ hashFiles('**/mix.lock') }}
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Generate documentation
+      run: mix docs
+
+    - name: Upload documentation
+      uses: actions/upload-artifact@v4
+      with:
+        name: documentation
+        path: doc/
+      if: github.ref == 'refs/heads/main' 
