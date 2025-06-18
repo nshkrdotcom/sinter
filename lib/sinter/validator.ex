@@ -21,13 +21,13 @@ defmodule Sinter.Validator do
   your validation logic pure and your transformations visible.
   """
 
-  alias Sinter.{Schema, Types, Error}
+  alias Sinter.{Error, Schema, Types}
 
   @type validation_opts :: [
-    coerce: boolean(),
-    strict: boolean(),
-    path: [atom() | String.t() | integer()]
-  ]
+          coerce: boolean(),
+          strict: boolean(),
+          path: [atom() | String.t() | integer()]
+        ]
 
   @type validation_result :: {:ok, map()} | {:error, [Error.t()]}
 
@@ -121,14 +121,14 @@ defmodule Sinter.Validator do
       {:ok, [%{name: "Alice", age: 30}, %{name: "Bob", age: 25}]}
   """
   @spec validate_many(Schema.t(), [map()], validation_opts()) ::
-    {:ok, [map()]} | {:error, %{integer() => [Error.t()]}}
+          {:ok, [map()]} | {:error, %{integer() => [Error.t()]}}
   def validate_many(%Schema{} = schema, data_list, opts \\ []) when is_list(data_list) do
     results =
       data_list
       |> Enum.with_index()
       |> Enum.map(fn {data, index} ->
         # Add index to base path for error reporting
-        index_opts = Keyword.update(opts, :path, [index], &([index | &1]))
+        index_opts = Keyword.update(opts, :path, [index], &[index | &1])
 
         case validate(schema, data, index_opts) do
           {:ok, validated} -> {:ok, {index, validated}}
@@ -142,6 +142,7 @@ defmodule Sinter.Validator do
           oks
           |> Enum.sort_by(fn {:ok, {index, _}} -> index end)
           |> Enum.map(fn {:ok, {_index, data}} -> data end)
+
         {:ok, validated_list}
 
       {_, errors} ->
@@ -149,6 +150,7 @@ defmodule Sinter.Validator do
           errors
           |> Enum.map(fn {:error, {index, errs}} -> {index, errs} end)
           |> Map.new()
+
         {:error, error_map}
     end
   end
@@ -156,7 +158,8 @@ defmodule Sinter.Validator do
   # Private helper functions implementing the validation pipeline
 
   @spec validate_input_format(term(), [atom()]) :: :ok | {:error, [Error.t()]}
-  defp validate_input_format(data, path) when is_map(data), do: :ok
+  defp validate_input_format(data, _path) when is_map(data), do: :ok
+
   defp validate_input_format(data, path) do
     error = Error.new(path, :invalid_input, "Expected map, got: #{inspect(data)}")
     {:error, [error]}
@@ -172,18 +175,21 @@ defmodule Sinter.Validator do
       end)
 
     case missing_fields do
-      [] -> :ok
+      [] ->
+        :ok
+
       fields ->
         errors =
           Enum.map(fields, fn field ->
             Error.new(path ++ [field], :required, "field is required")
           end)
+
         {:error, errors}
     end
   end
 
   @spec validate_fields(Schema.t(), map(), validation_opts()) ::
-    {:ok, map()} | {:error, [Error.t()]}
+          {:ok, map()} | {:error, [Error.t()]}
   defp validate_fields(schema, data, opts) do
     path = Keyword.get(opts, :path, [])
     coerce = Keyword.get(opts, :coerce, false)
@@ -201,7 +207,7 @@ defmodule Sinter.Validator do
   end
 
   @spec validate_single_field(atom(), Schema.field_definition(), map(), [atom()], boolean()) ::
-    {atom(), {:ok, term()} | {:error, [Error.t()]} | :skip}
+          {atom(), {:ok, term()} | {:error, [Error.t()]} | :skip}
   defp validate_single_field(field_name, field_def, data, base_path, coerce) do
     field_path = base_path ++ [field_name]
     field_value = get_field_value(data, field_name)
@@ -237,14 +243,15 @@ defmodule Sinter.Validator do
   end
 
   @spec validate_field_value(Schema.field_definition(), term(), [atom()], boolean()) ::
-    {:ok, term()} | {:error, [Error.t()]}
+          {:ok, term()} | {:error, [Error.t()]}
   defp validate_field_value(field_def, value, path, coerce) do
     # First apply coercion if enabled
     value_to_validate =
       if coerce do
         case Types.coerce(field_def.type, value) do
           {:ok, coerced} -> coerced
-          {:error, _} -> value  # Keep original on coercion failure
+          # Keep original on coercion failure
+          {:error, _} -> value
         end
       else
         value
@@ -258,7 +265,7 @@ defmodule Sinter.Validator do
   end
 
   @spec collect_field_results([{atom(), {:ok, term()} | {:error, [Error.t()]} | :skip}]) ::
-    {:ok, map()} | {:error, [Error.t()]}
+          {:ok, map()} | {:error, [Error.t()]}
   defp collect_field_results(results) do
     {successes, errors} =
       Enum.reduce(results, {%{}, []}, fn
@@ -279,7 +286,7 @@ defmodule Sinter.Validator do
   end
 
   @spec validate_strict_mode(Schema.t(), map(), map(), validation_opts()) ::
-    :ok | {:error, [Error.t()]}
+          :ok | {:error, [Error.t()]}
   defp validate_strict_mode(schema, validated_data, original_data, opts) do
     # Check if strict mode is enabled (schema setting or option override)
     strict = Keyword.get(opts, :strict, Schema.strict?(schema))
@@ -300,7 +307,9 @@ defmodule Sinter.Validator do
     extra_keys = MapSet.difference(original_keys, validated_keys) |> MapSet.to_list()
 
     case extra_keys do
-      [] -> :ok
+      [] ->
+        :ok
+
       keys ->
         error = Error.new(path, :extra_fields, "unexpected fields: #{inspect(keys)}")
         {:error, [error]}
@@ -308,7 +317,7 @@ defmodule Sinter.Validator do
   end
 
   @spec apply_post_validation(Schema.t(), map(), [atom()]) ::
-    {:ok, map()} | {:error, [Error.t()]}
+          {:ok, map()} | {:error, [Error.t()]}
   defp apply_post_validation(schema, validated_data, path) do
     case Schema.post_validate_fn(schema) do
       nil ->
@@ -328,14 +337,24 @@ defmodule Sinter.Validator do
               {:error, [error]}
 
             other ->
-              error = Error.new(path, :post_validation,
-                "Post-validation function returned invalid format: #{inspect(other)}")
+              error =
+                Error.new(
+                  path,
+                  :post_validation,
+                  "Post-validation function returned invalid format: #{inspect(other)}"
+                )
+
               {:error, [error]}
           end
         rescue
           e ->
-            error = Error.new(path, :post_validation,
-              "Post-validation function failed: #{Exception.message(e)}")
+            error =
+              Error.new(
+                path,
+                :post_validation,
+                "Post-validation function failed: #{Exception.message(e)}"
+              )
+
             {:error, [error]}
         end
     end

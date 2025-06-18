@@ -2,7 +2,7 @@ defmodule Sinter.MixProject do
   use Mix.Project
 
   @version "0.1.0"
-  @source_url "https://github.com/your-org/sinter"
+  @source_url "https://github.com/nshkrdotcom/sinter"
 
   def project do
     [
@@ -17,6 +17,7 @@ defmodule Sinter.MixProject do
       description: description(),
       package: package(),
       docs: docs(),
+      aliases: aliases(),
 
       # Testing and Analysis
       test_coverage: [tool: ExCoveralls],
@@ -24,7 +25,10 @@ defmodule Sinter.MixProject do
         coveralls: :test,
         "coveralls.detail": :test,
         "coveralls.post": :test,
-        "coveralls.html": :test
+        "coveralls.html": :test,
+        "test.watch": :test,
+        check: :test,
+        qa: :test
       ],
 
       # Dialyzer
@@ -45,20 +49,25 @@ defmodule Sinter.MixProject do
   defp deps do
     [
       # Core libraries for enhanced functionality
-      {:jason, "~> 1.4"},                 # Fast JSON parsing (using jason instead of simdjsone for now)
-      {:ex_json_schema, "~> 0.10.2"},     # Robust JSON Schema validation
+      # Fast JSON parsing (using jason instead of simdjsone for now)
+      {:jason, "~> 1.4"},
+      # Robust JSON Schema validation
+      {:ex_json_schema, "~> 0.10.2"},
 
       # Optional integration libraries (commented out for now)
-      # {:estructura, "~> 1.8", optional: true},  # Advanced nested patterns
+      # {:ecto, "~> 3.11", optional: true},
+      # {:phoenix, "~> 1.7", optional: true},
+      # {:absinthe, "~> 1.7", optional: true},
 
-      # Development and Testing
-      {:ex_doc, "~> 0.31", only: :dev, runtime: false},
-      {:excoveralls, "~> 0.18", only: :test},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      # Development and testing dependencies
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.18", only: :test},
+      {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
 
-      # Testing utilities
-      {:stream_data, "~> 1.0", only: [:dev, :test]},
+      # Property testing and benchmarking
+      {:stream_data, "~> 1.1", only: [:dev, :test]},
       {:benchee, "~> 1.3", only: :dev}
     ]
   end
@@ -76,8 +85,8 @@ defmodule Sinter.MixProject do
   defp package do
     [
       name: "sinter",
-      maintainers: ["Your Name"],
-      licenses: ["Apache-2.0"],
+      maintainers: ["nshkrdotcom"],
+      licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
         "Changelog" => @source_url <> "/blob/main/CHANGELOG.md",
@@ -109,10 +118,10 @@ defmodule Sinter.MixProject do
         "docs/performance.md": [title: "Performance Guide"]
       ],
       groups_for_extras: [
-        "Guides": ~r/docs\/.*/
+        Guides: ~r/docs\/.*/
       ],
       groups_for_modules: [
-        "Core": [
+        Core: [
           Sinter,
           Sinter.Schema,
           Sinter.Validator,
@@ -123,12 +132,35 @@ defmodule Sinter.MixProject do
           Sinter.Error,
           Sinter.ValidationError
         ],
-        "Internals": [
+        Internals: [
           Sinter.Schema.Compiler,
           Sinter.Validator.Engine,
           Sinter.JsonSchema.Generator
         ]
       ]
+    ]
+  end
+
+  defp aliases do
+    [
+      # Quick checks
+      check: [
+        "format --check-formatted",
+        "compile --warnings-as-errors",
+        "credo --strict",
+        "test"
+      ],
+
+      # Quality assurance (fast check without Dialyzer)
+      qa: ["check"],
+
+      # Full QA with type checking (Dialyzer warnings allowed)
+      "qa.full": ["check", "cmd echo 'Running Dialyzer (warnings allowed)...'"],
+
+      # Test variations
+      "test.watch": ["test.watch --clear"],
+      "test.quick": ["test --exclude slow"],
+      "test.all": ["test --include slow"]
     ]
   end
 
@@ -139,12 +171,11 @@ defmodule Sinter.MixProject do
       plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
       flags: [
         :error_handling,
-        :race_conditions,
         :underspecs,
         :unknown,
         :unmatched_returns
       ],
-      ignore_warnings: ".dialyzer_ignore.exs",
+      ignore_warnings: "dialyzer.ignore-warnings",
       list_unused_filters: true
     ]
   end

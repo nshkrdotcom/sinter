@@ -16,41 +16,41 @@ defmodule Sinter.Schema do
   They all ultimately call this module's unified engine.
   """
 
-  alias Sinter.{Types, Error}
+  alias Sinter.{Error, Types}
 
   @type field_spec :: {atom(), Types.type_spec(), keyword()}
   @type schema_opts :: [
-    title: String.t(),
-    description: String.t(),
-    strict: boolean(),
-    post_validate: (map() -> {:ok, map()} | {:error, String.t() | Error.t()})
-  ]
+          title: String.t(),
+          description: String.t(),
+          strict: boolean(),
+          post_validate: (map() -> {:ok, map()} | {:error, String.t() | Error.t()})
+        ]
 
   @enforce_keys [:fields, :config]
   defstruct [:fields, :config, :metadata]
 
   @type t :: %__MODULE__{
-    fields: %{atom() => field_definition()},
-    config: config(),
-    metadata: map()
-  }
+          fields: %{atom() => field_definition()},
+          config: config(),
+          metadata: map()
+        }
 
   @type field_definition :: %{
-    name: atom(),
-    type: Types.type_definition(),
-    required: boolean(),
-    constraints: keyword(),
-    description: String.t() | nil,
-    example: term() | nil,
-    default: term() | nil
-  }
+          name: atom(),
+          type: Types.type_definition(),
+          required: boolean(),
+          constraints: keyword(),
+          description: String.t() | nil,
+          example: term() | nil,
+          default: term() | nil
+        }
 
   @type config :: %{
-    title: String.t() | nil,
-    description: String.t() | nil,
-    strict: boolean(),
-    post_validate: function() | nil
-  }
+          title: String.t() | nil,
+          description: String.t() | nil,
+          strict: boolean(),
+          post_validate: function() | nil
+        }
 
   @doc """
   Defines a schema from a list of field specifications.
@@ -289,20 +289,33 @@ defmodule Sinter.Schema do
     cond do
       Keyword.has_key?(opts, :required) ->
         Keyword.get(opts, :required)
+
       Keyword.get(opts, :optional, false) ->
         false
+
       Keyword.has_key?(opts, :default) ->
-        false  # Fields with defaults are optional
+        # Fields with defaults are optional
+        false
+
       true ->
-        true   # Default is required
+        # Default is required
+        true
     end
   end
 
   @spec extract_constraints(keyword()) :: keyword()
   defp extract_constraints(opts) do
     constraint_keys = [
-      :min_length, :max_length, :min_items, :max_items,
-      :gt, :lt, :gteq, :lteq, :format, :choices
+      :min_length,
+      :max_length,
+      :min_items,
+      :max_items,
+      :gt,
+      :lt,
+      :gteq,
+      :lteq,
+      :format,
+      :choices
     ]
 
     Keyword.take(opts, constraint_keys)

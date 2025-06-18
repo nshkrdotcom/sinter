@@ -18,11 +18,11 @@ defmodule Sinter.JsonSchema do
   alias Sinter.{Schema, Types}
 
   @type generation_opts :: [
-    optimize_for_provider: :openai | :anthropic | :generic,
-    flatten: boolean(),
-    include_descriptions: boolean(),
-    strict: boolean()
-  ]
+          optimize_for_provider: :openai | :anthropic | :generic,
+          flatten: boolean(),
+          include_descriptions: boolean(),
+          strict: boolean()
+        ]
 
   @doc """
   Generates a JSON Schema from a Sinter schema.
@@ -130,7 +130,7 @@ defmodule Sinter.JsonSchema do
     * `{:error, issues}` if problems are found
   """
   @spec validate_schema(map(), keyword()) :: :ok | {:error, [String.t()]}
-  def validate_schema(json_schema, opts \\ []) do
+  def validate_schema(json_schema, _opts \\ []) do
     issues = []
 
     # Check required structure
@@ -201,14 +201,16 @@ defmodule Sinter.JsonSchema do
   @spec apply_provider_optimizations(map(), atom()) :: map()
   defp apply_provider_optimizations(schema, :openai) do
     schema
-    |> Map.put("additionalProperties", false)  # OpenAI requires this
+    # OpenAI requires this
+    |> Map.put("additionalProperties", false)
     |> ensure_required_array()
     |> optimize_for_function_calling()
   end
 
   defp apply_provider_optimizations(schema, :anthropic) do
     schema
-    |> Map.put("additionalProperties", false)  # Anthropic prefers this
+    # Anthropic prefers this
+    |> Map.put("additionalProperties", false)
     |> ensure_required_array()
     |> optimize_for_tool_use()
   end
@@ -244,7 +246,9 @@ defmodule Sinter.JsonSchema do
   @spec remove_unsupported_formats(map(), [atom()]) :: map()
   defp remove_unsupported_formats(schema, unsupported_formats) do
     case Map.get(schema, "properties") do
-      nil -> schema
+      nil ->
+        schema
+
       properties ->
         cleaned_properties =
           properties
@@ -267,7 +271,9 @@ defmodule Sinter.JsonSchema do
         else
           property_schema
         end
-      _ -> property_schema
+
+      _ ->
+        property_schema
     end
   end
 
@@ -275,7 +281,9 @@ defmodule Sinter.JsonSchema do
   defp simplify_complex_unions(schema) do
     # Simplify oneOf/anyOf with more than 3 options
     case Map.get(schema, "properties") do
-      nil -> schema
+      nil ->
+        schema
+
       properties ->
         simplified_properties =
           properties
@@ -329,7 +337,9 @@ defmodule Sinter.JsonSchema do
   @spec maybe_add_description(map(), String.t() | nil, boolean()) :: map()
   defp maybe_add_description(schema, _description, false), do: schema
   defp maybe_add_description(schema, nil, _include), do: schema
-  defp maybe_add_description(schema, description, true), do: Map.put(schema, "description", description)
+
+  defp maybe_add_description(schema, description, true),
+    do: Map.put(schema, "description", description)
 
   @spec maybe_add_example(map(), term() | nil) :: map()
   defp maybe_add_example(schema, nil), do: schema
@@ -361,8 +371,10 @@ defmodule Sinter.JsonSchema do
         else
           ["Object schema missing 'properties'" | issues]
         end
+
       nil ->
         ["Schema missing 'type' field" | issues]
+
       _ ->
         issues
     end
@@ -374,8 +386,10 @@ defmodule Sinter.JsonSchema do
     case Map.get(schema, "type") do
       type when type in ["object", "array", "string", "number", "integer", "boolean", "null"] ->
         issues
+
       type when is_binary(type) ->
         ["Invalid type: #{type}" | issues]
+
       _ ->
         issues
     end
@@ -398,6 +412,7 @@ defmodule Sinter.JsonSchema do
     case {Map.get(schema, "minimum"), Map.get(schema, "maximum")} do
       {min, max} when is_number(min) and is_number(max) and min > max ->
         ["minimum (#{min}) cannot be greater than maximum (#{max})" | issues]
+
       _ ->
         issues
     end
@@ -408,6 +423,7 @@ defmodule Sinter.JsonSchema do
     case {Map.get(schema, "minLength"), Map.get(schema, "maxLength")} do
       {min, max} when is_integer(min) and is_integer(max) and min > max ->
         ["minLength (#{min}) cannot be greater than maxLength (#{max})" | issues]
+
       _ ->
         issues
     end
@@ -418,6 +434,7 @@ defmodule Sinter.JsonSchema do
     case {Map.get(schema, "minItems"), Map.get(schema, "maxItems")} do
       {min, max} when is_integer(min) and is_integer(max) and min > max ->
         ["minItems (#{min}) cannot be greater than maxItems (#{max})" | issues]
+
       _ ->
         issues
     end

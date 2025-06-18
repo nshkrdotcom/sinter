@@ -11,11 +11,11 @@ defmodule Sinter.Error do
   defstruct [:path, :code, :message, :context]
 
   @type t :: %__MODULE__{
-    path: [atom() | String.t() | integer()],
-    code: atom(),
-    message: String.t(),
-    context: map() | nil
-  }
+          path: [atom() | String.t() | integer()],
+          code: atom(),
+          message: String.t(),
+          context: map() | nil
+        }
 
   @doc """
   Creates a new validation error.
@@ -41,11 +41,11 @@ defmodule Sinter.Error do
       %Sinter.Error{path: [:name], code: :required, message: "field is required"}
   """
   @spec new(
-    [atom() | String.t() | integer()] | atom() | String.t(),
-    atom(),
-    String.t(),
-    map() | nil
-  ) :: t()
+          [atom() | String.t() | integer()] | atom() | String.t(),
+          atom(),
+          String.t(),
+          map() | nil
+        ) :: t()
   def new(path, code, message, context \\ nil) do
     %__MODULE__{
       path: normalize_path(path),
@@ -70,11 +70,11 @@ defmodule Sinter.Error do
       }
   """
   @spec with_context(
-    [atom() | String.t() | integer()] | atom() | String.t(),
-    atom(),
-    String.t(),
-    map()
-  ) :: t()
+          [atom() | String.t() | integer()] | atom() | String.t(),
+          atom(),
+          String.t(),
+          map()
+        ) :: t()
   def with_context(path, code, message, context) when is_map(context) do
     new(path, code, message, context)
   end
@@ -371,7 +371,7 @@ defmodule Sinter.Error do
   # Private helper functions
 
   @spec normalize_path([atom() | String.t() | integer()] | atom() | String.t()) ::
-    [atom() | String.t() | integer()]
+          [atom() | String.t() | integer()]
   defp normalize_path(path) when is_list(path), do: path
   defp normalize_path(path) when is_atom(path) or is_binary(path), do: [path]
 
@@ -399,12 +399,14 @@ defmodule Sinter.Error do
   defp extract_path(map) do
     case Map.get(map, "path") do
       path when is_list(path) ->
-        converted_path = Enum.map(path, fn
-          str when is_binary(str) -> String.to_atom(str)
-          num when is_integer(num) -> num
-          atom when is_atom(atom) -> atom
-          other -> other
-        end)
+        converted_path =
+          Enum.map(path, fn
+            str when is_binary(str) -> String.to_atom(str)
+            num when is_integer(num) -> num
+            atom when is_atom(atom) -> atom
+            other -> other
+          end)
+
         {:ok, converted_path}
 
       nil ->
@@ -458,9 +460,9 @@ defmodule Sinter.ValidationError do
   defexception [:message, :errors]
 
   @type t :: %__MODULE__{
-    message: String.t(),
-    errors: [Sinter.Error.t()]
-  }
+          message: String.t(),
+          errors: [Sinter.Error.t()]
+        }
 
   @doc """
   Creates a new ValidationError from a list of errors.
