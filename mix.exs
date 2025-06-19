@@ -48,16 +48,16 @@ defmodule Sinter.MixProject do
 
   defp deps do
     [
-      # Core libraries for enhanced functionality
-      # Fast JSON parsing (using jason instead of simdjsone for now)
-      {:jason, "~> 1.4"},
-      # Robust JSON Schema validation
+      # Gift libraries (as specified in design docs)
+      # Fast JSON parsing - the blazing fast gift library
+      {:simdjsone, "~> 0.5.0"},
+      # JSON Schema validation engine - the heavy lifting gift library
       {:ex_json_schema, "~> 0.10.2"},
+      #      # Struct transformation library - for client app transformations
+      #      {:estructura, "~> 1.9.0"},
 
-      # Optional integration libraries (commented out for now)
-      # {:ecto, "~> 3.11", optional: true},
-      # {:phoenix, "~> 1.7", optional: true},
-      # {:absinthe, "~> 1.7", optional: true},
+      # Fallback JSON parser for environments where NIFs cause issues
+      {:jason, "~> 1.4"},
 
       # Development and testing dependencies
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},

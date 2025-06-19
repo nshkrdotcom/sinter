@@ -1,6 +1,6 @@
 ExUnit.start()
 
-# Configure ExUnit
+# Configure ExUnit for comprehensive testing
 ExUnit.configure(
   exclude: [:skip, :pending],
   formatters: [ExUnit.CLIFormatter],

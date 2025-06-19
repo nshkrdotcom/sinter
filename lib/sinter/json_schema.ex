@@ -8,11 +8,27 @@ defmodule Sinter.JsonSchema do
 
   ## Features
 
-  - Standard JSON Schema generation
+  - Standard JSON Schema generation  
   - Provider-specific optimizations (OpenAI, Anthropic, etc.)
   - Reference resolution and flattening
   - Constraint mapping
   - Metadata preservation
+
+  ## Usage
+
+      schema = Sinter.Schema.define([
+        {:name, :string, [required: true, min_length: 2]},
+        {:age, :integer, [optional: true, gt: 0]}
+      ])
+
+      # Basic JSON Schema generation
+      json_schema = Sinter.JsonSchema.generate(schema)
+
+      # Provider-specific optimization
+      openai_schema = Sinter.JsonSchema.generate(schema, optimize_for_provider: :openai)
+
+      # For specific providers
+      anthropic_schema = Sinter.JsonSchema.for_provider(schema, :anthropic)
   """
 
   alias Sinter.{Schema, Types}
@@ -39,7 +55,7 @@ defmodule Sinter.JsonSchema do
 
     * `:optimize_for_provider` - Apply provider-specific optimizations
       - `:openai` - Optimize for OpenAI function calling
-      - `:anthropic` - Optimize for Anthropic tool use
+      - `:anthropic` - Optimize for Anthropic tool use  
       - `:generic` - Standard JSON Schema (default)
     * `:flatten` - Resolve all references inline (default: false)
     * `:include_descriptions` - Include field descriptions (default: true)
@@ -184,11 +200,47 @@ defmodule Sinter.JsonSchema do
     # Convert type to JSON Schema
     type_schema = Types.to_json_schema(field_def.type)
 
+    # Add constraints
+    constrained_schema = add_constraints(type_schema, field_def.constraints)
+
     # Add field metadata
-    type_schema
+    constrained_schema
     |> maybe_add_description(field_def.description, include_descriptions)
     |> maybe_add_example(field_def.example)
     |> maybe_add_default(field_def.default)
+  end
+
+  @spec add_constraints(map(), keyword()) :: map()
+  defp add_constraints(schema, constraints) do
+    Enum.reduce(constraints, schema, fn constraint, acc ->
+      add_single_constraint(acc, constraint)
+    end)
+  end
+
+  @spec add_single_constraint(map(), Types.constraint()) :: map()
+  defp add_single_constraint(schema, {:min_length, min}), do: Map.put(schema, "minLength", min)
+  defp add_single_constraint(schema, {:max_length, max}), do: Map.put(schema, "maxLength", max)
+  defp add_single_constraint(schema, {:min_items, min}), do: Map.put(schema, "minItems", min)
+  defp add_single_constraint(schema, {:max_items, max}), do: Map.put(schema, "maxItems", max)
+
+  defp add_single_constraint(schema, {:gt, threshold}),
+    do: Map.put(schema, "exclusiveMinimum", threshold)
+
+  defp add_single_constraint(schema, {:gteq, threshold}), do: Map.put(schema, "minimum", threshold)
+
+  defp add_single_constraint(schema, {:lt, threshold}),
+    do: Map.put(schema, "exclusiveMaximum", threshold)
+
+  defp add_single_constraint(schema, {:lteq, threshold}), do: Map.put(schema, "maximum", threshold)
+
+  defp add_single_constraint(schema, {:format, regex}) do
+    # Convert Regex to string pattern
+    pattern = Regex.source(regex)
+    Map.put(schema, "pattern", pattern)
+  end
+
+  defp add_single_constraint(schema, {:choices, choices}) do
+    Map.put(schema, "enum", choices)
   end
 
   @spec build_required_list(Schema.t()) :: [String.t()]
