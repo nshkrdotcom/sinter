@@ -389,6 +389,7 @@ defmodule Sinter.Schema do
        do: :ok
 
   defp validate_type_spec({:array, inner_type}), do: validate_type_spec(inner_type)
+  defp validate_type_spec({:array, inner_type, _constraints}), do: validate_type_spec(inner_type)
 
   defp validate_type_spec({:union, types}) when is_list(types) do
     Enum.each(types, &validate_type_spec/1)
@@ -449,9 +450,12 @@ defmodule Sinter.Schema do
     # Extract constraints from options
     constraints = extract_constraints(opts)
 
+    # Normalize type specification with constraints if needed
+    normalized_type = normalize_type_with_constraints(type_spec, constraints)
+
     %{
       name: name,
-      type: type_spec,
+      type: normalized_type,
       required: required,
       constraints: constraints,
       description: Keyword.get(opts, :description),
@@ -518,6 +522,19 @@ defmodule Sinter.Schema do
       post_validate: Keyword.get(opts, :post_validate)
     }
   end
+
+  @spec normalize_type_with_constraints(Types.type_spec(), keyword()) :: Types.type_spec()
+  defp normalize_type_with_constraints({:array, inner_type}, constraints) do
+    array_constraints = Keyword.take(constraints, [:min_items, :max_items])
+
+    if array_constraints == [] do
+      {:array, inner_type}
+    else
+      {:array, inner_type, array_constraints}
+    end
+  end
+
+  defp normalize_type_with_constraints(type_spec, _constraints), do: type_spec
 
   @spec get_sinter_version() :: String.t()
   defp get_sinter_version do

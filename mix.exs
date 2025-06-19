@@ -50,9 +50,9 @@ defmodule Sinter.MixProject do
     [
       # Gift libraries (as specified in design docs)
       # Fast JSON parsing - the blazing fast gift library
-#      {:simdjsone, "~> 0.5.0"},
+      #      {:simdjsone, "~> 0.5.0"},
       # JSON Schema validation engine - the heavy lifting gift library
-#      {:ex_json_schema, "~> 0.10.2"},
+      #      {:ex_json_schema, "~> 0.10.2"},
       #      # Struct transformation library - for client app transformations
       #      {:estructura, "~> 1.9.0"},
 

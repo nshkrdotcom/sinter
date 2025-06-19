@@ -233,15 +233,18 @@ defmodule Sinter.JsonSchema do
 
   defp add_single_constraint(schema, {:lteq, threshold}), do: Map.put(schema, "maximum", threshold)
 
-  defp add_single_constraint(schema, {:format, regex}) do
+  defp add_single_constraint(schema, {:format, regex}) when is_struct(regex, Regex) do
     # Convert Regex to string pattern
     pattern = Regex.source(regex)
     Map.put(schema, "pattern", pattern)
   end
 
-  defp add_single_constraint(schema, {:choices, choices}) do
+  defp add_single_constraint(schema, {:choices, choices}) when is_list(choices) do
     Map.put(schema, "enum", choices)
   end
+
+  # Skip unknown constraints gracefully
+  defp add_single_constraint(schema, _unknown_constraint), do: schema
 
   @spec build_required_list(Schema.t()) :: [String.t()]
   defp build_required_list(schema) do
@@ -449,14 +452,21 @@ defmodule Sinter.JsonSchema do
 
   @spec check_constraint_validity(map(), [String.t()]) :: [String.t()]
   defp check_constraint_validity(schema, issues) do
-    # Check numeric constraints
+    # Check constraints at root level
     issues = check_numeric_constraints(schema, issues)
-
-    # Check string constraints
     issues = check_string_constraints(schema, issues)
+    issues = check_array_constraints(schema, issues)
 
-    # Check array constraints
-    check_array_constraints(schema, issues)
+    # Check constraints in properties
+    case Map.get(schema, "properties") do
+      nil ->
+        issues
+
+      properties ->
+        Enum.reduce(properties, issues, fn {_name, prop_schema}, acc ->
+          check_constraint_validity(prop_schema, acc)
+        end)
+    end
   end
 
   @spec check_numeric_constraints(map(), [String.t()]) :: [String.t()]

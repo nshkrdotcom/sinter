@@ -238,7 +238,7 @@ defmodule Sinter.Validator do
       {:missing, %{required: false}} ->
         {field_name, :skip}
 
-      # Field missing and required  
+      # Field missing and required
       {:missing, %{required: true}} ->
         error = Error.new(field_path, :required, "field is required")
         {field_name, {:error, [error]}}
@@ -270,7 +270,15 @@ defmodule Sinter.Validator do
           validate_with_constraints(field_def, coerced, path)
 
         {:error, errors} ->
-          {:error, List.wrap(errors)}
+          # Update error paths to reflect the current field path
+          updated_errors =
+            Enum.map(List.wrap(errors), fn error ->
+              # Combine the field path with any existing path from array indices
+              combined_path = path ++ error.path
+              %{error | path: combined_path}
+            end)
+
+          {:error, updated_errors}
       end
     else
       # No coercion - just validate with constraints
