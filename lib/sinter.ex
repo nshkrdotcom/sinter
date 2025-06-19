@@ -6,7 +6,7 @@ defmodule Sinter do
   specifically for dynamic frameworks. It follows the "One True Way" principle:
 
   - **One way** to define schemas (unified core engine)
-  - **One way** to validate data (single validation pipeline)
+  - **One way** to validate data (single validation pipeline)  
   - **One way** to generate JSON Schema (unified generator)
 
   ## Quick Start
@@ -31,6 +31,19 @@ defmodule Sinter do
 
   This module provides convenient helper functions for common validation tasks
   that internally use the core unified engine.
+
+  ## Design Philosophy
+
+  Sinter distills data validation to its pure essence, extracting the essential
+  power from complex systems while eliminating unnecessary abstraction. It follows
+  three key principles:
+
+  1. **Validation, Not Transformation** - Sinter validates data structure and constraints
+     but does not perform business logic transformations
+  2. **Runtime-First Design** - Schemas are data structures that can be created and
+     modified at runtime, perfect for dynamic frameworks
+  3. **Unified Core Engine** - All validation flows through a single, well-tested
+     pipeline for consistency and reliability
   """
 
   alias Sinter.{Schema, Validator}
@@ -71,19 +84,41 @@ defmodule Sinter do
 
       iex> {:error, [error]} = Sinter.validate_type(:string, 123)
       iex> error.code
-      :type_mismatch
+      :type
   """
   @spec validate_type(Sinter.Types.type_spec(), term(), validation_opts()) :: validation_result()
   def validate_type(type_spec, value, opts \\ []) do
-    constraints = Keyword.get(opts, :constraints, [])
-    validation_opts = Keyword.drop(opts, [:constraints])
+    # Extract explicit constraints or treat all non-validation options as constraints
+    explicit_constraints = Keyword.get(opts, :constraints, [])
+    validation_option_keys = [:coerce, :strict, :constraints]
+
+    {validation_only_opts, constraint_opts} = Keyword.split(opts, validation_option_keys)
+
+    # Combine explicit constraints with direct constraint options
+    constraints = explicit_constraints ++ constraint_opts
 
     # Create temporary single-field schema
     temp_schema = Schema.define([{:__temp__, type_spec, constraints}])
 
-    case Validator.validate(temp_schema, %{__temp__: value}, validation_opts) do
-      {:ok, %{__temp__: validated_value}} -> {:ok, validated_value}
-      {:error, errors} -> {:error, errors}
+    case Validator.validate(
+           temp_schema,
+           %{__temp__: value},
+           Keyword.delete(validation_only_opts, :constraints)
+         ) do
+      {:ok, %{__temp__: validated_value}} ->
+        {:ok, validated_value}
+
+      {:error, errors} ->
+        # Strip the temporary field name from error paths
+        fixed_errors =
+          Enum.map(errors, fn error ->
+            case error.path do
+              [:__temp__ | rest] -> %{error | path: rest}
+              path -> %{error | path: path}
+            end
+          end)
+
+        {:error, fixed_errors}
     end
   end
 
@@ -113,13 +148,23 @@ defmodule Sinter do
   @spec validate_value(atom(), Sinter.Types.type_spec(), term(), validation_opts()) ::
           validation_result()
   def validate_value(field_name, type_spec, value, opts \\ []) do
-    constraints = Keyword.get(opts, :constraints, [])
-    validation_opts = Keyword.drop(opts, [:constraints])
+    # Extract explicit constraints or treat all non-validation options as constraints
+    explicit_constraints = Keyword.get(opts, :constraints, [])
+    validation_option_keys = [:coerce, :strict, :constraints]
+
+    {validation_only_opts, constraint_opts} = Keyword.split(opts, validation_option_keys)
+
+    # Combine explicit constraints with direct constraint options
+    constraints = explicit_constraints ++ constraint_opts
 
     # Create temporary schema with named field
     temp_schema = Schema.define([{field_name, type_spec, constraints}])
 
-    case Validator.validate(temp_schema, %{field_name => value}, validation_opts) do
+    case Validator.validate(
+           temp_schema,
+           %{field_name => value},
+           Keyword.delete(validation_only_opts, :constraints)
+         ) do
       {:ok, validated_map} -> {:ok, Map.get(validated_map, field_name)}
       {:error, errors} -> {:error, errors}
     end
@@ -224,7 +269,7 @@ defmodule Sinter do
 
   ## Parameters
 
-    * `type_specs` - List of type specifications or `{name, type_spec}` tuples
+    * `field_specs` - List of field specifications or `{name, type_spec}` tuples
     * `base_opts` - Base validation options
 
   ## Examples

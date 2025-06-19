@@ -9,7 +9,7 @@ defmodule Sinter.Validator do
   ## Validation Pipeline
 
   1. **Input Validation** - Ensure input is valid format
-  2. **Required Field Check** - Verify all required fields are present
+  2. **Required Field Check** - Verify all required fields are present  
   3. **Field Validation** - Validate each field against its type and constraints
   4. **Strict Mode Check** - Reject unknown fields if strict mode enabled
   5. **Post Validation** - Run custom cross-field validation if configured
@@ -19,6 +19,23 @@ defmodule Sinter.Validator do
   The validator focuses purely on validation - it does NOT perform data transformation.
   Any data transformation should be explicit in your application code, keeping
   your validation logic pure and your transformations visible.
+
+  ## Usage
+
+      schema = Sinter.Schema.define([
+        {:name, :string, [required: true, min_length: 2]},
+        {:age, :integer, [optional: true, gt: 0]}
+      ])
+
+      # Basic validation
+      {:ok, validated} = Sinter.Validator.validate(schema, %{name: "Alice", age: 30})
+
+      # With coercion
+      {:ok, validated} = Sinter.Validator.validate(schema, %{name: "Alice", age: "30"}, coerce: true)
+
+      # Batch validation
+      data_list = [%{name: "Alice", age: 30}, %{name: "Bob", age: 25}]
+      {:ok, validated_list} = Sinter.Validator.validate_many(schema, data_list)
   """
 
   alias Sinter.{Error, Schema, Types}
@@ -161,7 +178,7 @@ defmodule Sinter.Validator do
   defp validate_input_format(data, _path) when is_map(data), do: :ok
 
   defp validate_input_format(data, path) do
-    error = Error.new(path, :invalid_input, "Expected map, got: #{inspect(data)}")
+    error = Error.new(path, :input_format, "Expected map, got: #{inspect(data)}")
     {:error, [error]}
   end
 
@@ -221,7 +238,7 @@ defmodule Sinter.Validator do
       {:missing, %{required: false}} ->
         {field_name, :skip}
 
-      # Field missing and required
+      # Field missing and required  
       {:missing, %{required: true}} ->
         error = Error.new(field_path, :required, "field is required")
         {field_name, {:error, [error]}}
@@ -246,23 +263,140 @@ defmodule Sinter.Validator do
           {:ok, term()} | {:error, [Error.t()]}
   defp validate_field_value(field_def, value, path, coerce) do
     # First apply coercion if enabled
-    value_to_validate =
-      if coerce do
-        case Types.coerce(field_def.type, value) do
-          {:ok, coerced} -> coerced
-          # Keep original on coercion failure
-          {:error, _} -> value
-        end
-      else
-        value
-      end
+    if coerce do
+      case Types.coerce(field_def.type, value) do
+        {:ok, coerced} ->
+          # Validate the coerced value with constraints
+          validate_with_constraints(field_def, coerced, path)
 
-    # Then validate the type
-    case Types.validate(field_def.type, value_to_validate, path) do
-      {:ok, validated} -> {:ok, validated}
-      {:error, errors} -> {:error, List.wrap(errors)}
+        {:error, errors} ->
+          {:error, List.wrap(errors)}
+      end
+    else
+      # No coercion - just validate with constraints
+      validate_with_constraints(field_def, value, path)
     end
   end
+
+  @spec validate_with_constraints(Schema.field_definition(), term(), [atom()]) ::
+          {:ok, term()} | {:error, [Error.t()]}
+  defp validate_with_constraints(field_def, value, path) do
+    # First validate the type
+    case Types.validate(field_def.type, value, path) do
+      {:ok, validated_value} ->
+        # Then validate constraints
+        case validate_constraints(field_def.constraints, validated_value, path) do
+          :ok -> {:ok, validated_value}
+          {:error, errors} -> {:error, errors}
+        end
+
+      {:error, errors} ->
+        {:error, List.wrap(errors)}
+    end
+  end
+
+  @spec validate_constraints(keyword(), term(), [atom()]) :: :ok | {:error, [Error.t()]}
+  defp validate_constraints(constraints, value, path) do
+    errors =
+      Enum.flat_map(constraints, fn constraint ->
+        case validate_single_constraint(constraint, value, path) do
+          :ok -> []
+          {:error, error} -> [error]
+        end
+      end)
+
+    case errors do
+      [] -> :ok
+      errors -> {:error, errors}
+    end
+  end
+
+  @spec validate_single_constraint(Types.constraint(), term(), [atom()]) ::
+          :ok | {:error, Error.t()}
+  defp validate_single_constraint({:min_length, min}, value, path)
+       when is_binary(value) or is_list(value) do
+    if length_of(value) >= min do
+      :ok
+    else
+      {:error, Error.new(path, :min_length, "must be at least #{min} characters/items long")}
+    end
+  end
+
+  defp validate_single_constraint({:max_length, max}, value, path)
+       when is_binary(value) or is_list(value) do
+    if length_of(value) <= max do
+      :ok
+    else
+      {:error, Error.new(path, :max_length, "must be at most #{max} characters/items long")}
+    end
+  end
+
+  defp validate_single_constraint({:min_items, min}, value, path) when is_list(value) do
+    if length(value) >= min do
+      :ok
+    else
+      {:error, Error.new(path, :min_items, "must contain at least #{min} items")}
+    end
+  end
+
+  defp validate_single_constraint({:max_items, max}, value, path) when is_list(value) do
+    if length(value) <= max do
+      :ok
+    else
+      {:error, Error.new(path, :max_items, "must contain at most #{max} items")}
+    end
+  end
+
+  defp validate_single_constraint({:gt, threshold}, value, path) when is_number(value) do
+    if value > threshold do
+      :ok
+    else
+      {:error, Error.new(path, :gt, "must be greater than #{threshold}")}
+    end
+  end
+
+  defp validate_single_constraint({:gteq, threshold}, value, path) when is_number(value) do
+    if value >= threshold do
+      :ok
+    else
+      {:error, Error.new(path, :gteq, "must be greater than or equal to #{threshold}")}
+    end
+  end
+
+  defp validate_single_constraint({:lt, threshold}, value, path) when is_number(value) do
+    if value < threshold do
+      :ok
+    else
+      {:error, Error.new(path, :lt, "must be less than #{threshold}")}
+    end
+  end
+
+  defp validate_single_constraint({:lteq, threshold}, value, path) when is_number(value) do
+    if value <= threshold do
+      :ok
+    else
+      {:error, Error.new(path, :lteq, "must be less than or equal to #{threshold}")}
+    end
+  end
+
+  defp validate_single_constraint({:format, regex}, value, path) when is_binary(value) do
+    if Regex.match?(regex, value) do
+      :ok
+    else
+      {:error, Error.new(path, :format, "does not match required format")}
+    end
+  end
+
+  defp validate_single_constraint({:choices, allowed}, value, path) do
+    if value in allowed do
+      :ok
+    else
+      {:error, Error.new(path, :choices, "must be one of: #{inspect(allowed)}")}
+    end
+  end
+
+  # Skip constraint validation for incompatible types
+  defp validate_single_constraint(_constraint, _value, _path), do: :ok
 
   @spec collect_field_results([{atom(), {:ok, term()} | {:error, [Error.t()]} | :skip}]) ::
           {:ok, map()} | {:error, [Error.t()]}
@@ -311,7 +445,7 @@ defmodule Sinter.Validator do
         :ok
 
       keys ->
-        error = Error.new(path, :extra_fields, "unexpected fields: #{inspect(keys)}")
+        error = Error.new(path, :strict, "unexpected fields: #{inspect(keys)}")
         {:error, [error]}
     end
   end
@@ -336,6 +470,9 @@ defmodule Sinter.Validator do
             {:error, %Error{} = error} ->
               {:error, [error]}
 
+            {:error, errors} when is_list(errors) ->
+              {:error, errors}
+
             other ->
               error =
                 Error.new(
@@ -359,4 +496,8 @@ defmodule Sinter.Validator do
         end
     end
   end
+
+  @spec length_of(String.t() | list()) :: non_neg_integer()
+  defp length_of(value) when is_binary(value), do: String.length(value)
+  defp length_of(value) when is_list(value), do: length(value)
 end

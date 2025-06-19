@@ -23,7 +23,7 @@ defmodule Sinter.Error do
   ## Parameters
 
     * `path` - Path to the field that caused the error
-    * `code` - Machine-readable error code
+    * `code` - Machine-readable error code  
     * `message` - Human-readable error message
     * `context` - Optional additional context information
 
@@ -61,10 +61,10 @@ defmodule Sinter.Error do
   ## Examples
 
       iex> context = %{expected: "string", actual: "integer", value: 42}
-      iex> Sinter.Error.with_context([:age], :type_mismatch, "expected string", context)
+      iex> Sinter.Error.with_context([:age], :type, "expected string", context)
       %Sinter.Error{
         path: [:age],
-        code: :type_mismatch,
+        code: :type,
         message: "expected string",
         context: %{expected: "string", actual: "integer", value: 42}
       }
@@ -125,13 +125,10 @@ defmodule Sinter.Error do
 
       iex> errors = [
       ...>   Sinter.Error.new([:name], :required, "field is required"),
-      ...>   Sinter.Error.new([:age], :type_mismatch, "expected integer")
+      ...>   Sinter.Error.new([:age], :type, "expected integer")
       ...> ]
       iex> Sinter.Error.format_errors(errors)
-      \"\"\"
-      name: field is required
-      age: expected integer
-      \"\"\"
+      "name: field is required\\nage: expected integer"
   """
   @spec format_errors([t()], keyword()) :: String.t()
   def format_errors(errors, opts \\ []) when is_list(errors) do
@@ -174,7 +171,7 @@ defmodule Sinter.Error do
       iex> errors = [
       ...>   Sinter.Error.new([:name], :required, "field is required"),
       ...>   Sinter.Error.new([:email], :required, "field is required"),
-      ...>   Sinter.Error.new([:age], :type_mismatch, "expected integer")
+      ...>   Sinter.Error.new([:age], :type, "expected integer")
       ...> ]
       iex> Sinter.Error.group_by_code(errors)
       %{
@@ -182,7 +179,7 @@ defmodule Sinter.Error do
           %Sinter.Error{path: [:name], ...},
           %Sinter.Error{path: [:email], ...}
         ],
-        type_mismatch: [
+        type: [
           %Sinter.Error{path: [:age], ...}
         ]
       }
@@ -199,7 +196,7 @@ defmodule Sinter.Error do
 
       iex> errors = [
       ...>   Sinter.Error.new([:name], :required, "field is required"),
-      ...>   Sinter.Error.new([:age], :type_mismatch, "expected integer")
+      ...>   Sinter.Error.new([:age], :type, "expected integer")
       ...> ]
       iex> Sinter.Error.filter_by_code(errors, :required)
       [%Sinter.Error{path: [:name], code: :required, ...}]
@@ -207,29 +204,6 @@ defmodule Sinter.Error do
   @spec filter_by_code([t()], atom()) :: [t()]
   def filter_by_code(errors, code) when is_list(errors) and is_atom(code) do
     Enum.filter(errors, &(&1.code == code))
-  end
-
-  @doc """
-  Filters errors by path prefix.
-
-  ## Examples
-
-      iex> errors = [
-      ...>   Sinter.Error.new([:user, :name], :required, "field is required"),
-      ...>   Sinter.Error.new([:user, :email], :format, "invalid format"),
-      ...>   Sinter.Error.new([:settings, :theme], :choices, "invalid choice")
-      ...> ]
-      iex> Sinter.Error.filter_by_path_prefix(errors, [:user])
-      [
-        %Sinter.Error{path: [:user, :name], ...},
-        %Sinter.Error{path: [:user, :email], ...}
-      ]
-  """
-  @spec filter_by_path_prefix([t()], [atom() | String.t() | integer()]) :: [t()]
-  def filter_by_path_prefix(errors, path_prefix) when is_list(errors) and is_list(path_prefix) do
-    Enum.filter(errors, fn error ->
-      path_starts_with?(error.path, path_prefix)
-    end)
   end
 
   @doc """
@@ -269,69 +243,17 @@ defmodule Sinter.Error do
 
       iex> errors = [
       ...>   Sinter.Error.new([:name], :required, "field is required"),
-      ...>   Sinter.Error.new([:age], :type_mismatch, "expected integer")
+      ...>   Sinter.Error.new([:age], :type, "expected integer")
       ...> ]
       iex> Sinter.Error.to_maps(errors)
       [
         %{"path" => ["name"], "code" => "required", "message" => "field is required"},
-        %{"path" => ["age"], "code" => "type_mismatch", "message" => "expected integer"}
+        %{"path" => ["age"], "code" => "type", "message" => "expected integer"}
       ]
   """
   @spec to_maps([t()]) :: [map()]
   def to_maps(errors) when is_list(errors) do
     Enum.map(errors, &to_map/1)
-  end
-
-  @doc """
-  Creates an error from a map representation.
-
-  Useful for deserializing errors from JSON or external sources.
-
-  ## Examples
-
-      iex> error_map = %{
-      ...>   "path" => ["user", "email"],
-      ...>   "code" => "format",
-      ...>   "message" => "invalid email format"
-      ...> }
-      iex> Sinter.Error.from_map(error_map)
-      {:ok, %Sinter.Error{
-        path: [:user, :email],
-        code: :format,
-        message: "invalid email format"
-      }}
-  """
-  @spec from_map(map()) :: {:ok, t()} | {:error, String.t()}
-  def from_map(map) when is_map(map) do
-    with {:ok, path} <- extract_path(map),
-         {:ok, code} <- extract_code(map),
-         {:ok, message} <- extract_message(map) do
-      context = Map.get(map, "context")
-      {:ok, new(path, code, message, context)}
-    end
-  end
-
-  @doc """
-  Gets the most specific error for a given path.
-
-  Returns the error with the longest matching path prefix.
-
-  ## Examples
-
-      iex> errors = [
-      ...>   Sinter.Error.new([:user], :required, "user is required"),
-      ...>   Sinter.Error.new([:user, :email], :format, "invalid email format")
-      ...> ]
-      iex> Sinter.Error.most_specific_for_path(errors, [:user, :email])
-      %Sinter.Error{path: [:user, :email], code: :format, ...}
-  """
-  @spec most_specific_for_path([t()], [atom() | String.t() | integer()]) :: t() | nil
-  def most_specific_for_path(errors, target_path) when is_list(errors) do
-    errors
-    |> Enum.filter(fn error ->
-      path_starts_with?(target_path, error.path)
-    end)
-    |> Enum.max_by(fn error -> length(error.path) end, fn -> nil end)
   end
 
   @doc """
@@ -341,17 +263,17 @@ defmodule Sinter.Error do
 
       iex> errors = [
       ...>   Sinter.Error.new([:name], :required, "field is required"),
-      ...>   Sinter.Error.new([:age], :type_mismatch, "expected integer"),
+      ...>   Sinter.Error.new([:age], :type, "expected integer"),
       ...>   Sinter.Error.new([:email], :format, "invalid email format")
       ...> ]
       iex> Sinter.Error.summarize(errors)
       %{
         total_errors: 3,
-        error_codes: [:required, :type_mismatch, :format],
+        error_codes: [:required, :type, :format],
         affected_paths: [[:name], [:age], [:email]],
         by_code: %{
           required: 1,
-          type_mismatch: 1,
+          type: 1,
           format: 1
         }
       }
@@ -381,72 +303,6 @@ defmodule Sinter.Error do
     |> Enum.map(&to_string/1)
     |> Enum.join(separator)
   end
-
-  @spec path_starts_with?([term()], [term()]) :: boolean()
-  defp path_starts_with?(path, prefix) do
-    prefix_length = length(prefix)
-    path_length = length(path)
-
-    if prefix_length <= path_length do
-      path_prefix = Enum.take(path, prefix_length)
-      path_prefix == prefix
-    else
-      false
-    end
-  end
-
-  @spec extract_path(map()) :: {:ok, [atom()]} | {:error, String.t()}
-  defp extract_path(map) do
-    case Map.get(map, "path") do
-      path when is_list(path) ->
-        converted_path =
-          Enum.map(path, fn
-            str when is_binary(str) -> String.to_atom(str)
-            num when is_integer(num) -> num
-            atom when is_atom(atom) -> atom
-            other -> other
-          end)
-
-        {:ok, converted_path}
-
-      nil ->
-        {:error, "missing 'path' field"}
-
-      _other ->
-        {:error, "invalid 'path' field, expected list"}
-    end
-  end
-
-  @spec extract_code(map()) :: {:ok, atom()} | {:error, String.t()}
-  defp extract_code(map) do
-    case Map.get(map, "code") do
-      code when is_binary(code) ->
-        {:ok, String.to_atom(code)}
-
-      code when is_atom(code) ->
-        {:ok, code}
-
-      nil ->
-        {:error, "missing 'code' field"}
-
-      _other ->
-        {:error, "invalid 'code' field, expected string or atom"}
-    end
-  end
-
-  @spec extract_message(map()) :: {:ok, String.t()} | {:error, String.t()}
-  defp extract_message(map) do
-    case Map.get(map, "message") do
-      message when is_binary(message) ->
-        {:ok, message}
-
-      nil ->
-        {:error, "missing 'message' field"}
-
-      _other ->
-        {:error, "invalid 'message' field, expected string"}
-    end
-  end
 end
 
 defmodule Sinter.ValidationError do
@@ -472,6 +328,7 @@ defmodule Sinter.ValidationError do
       iex> errors = [Sinter.Error.new([:name], :required, "field is required")]
       iex> raise Sinter.ValidationError, errors: errors
   """
+  @spec exception(keyword()) :: t()
   def exception(opts) do
     errors = Keyword.get(opts, :errors, [])
 
