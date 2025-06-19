@@ -110,15 +110,7 @@ defmodule Sinter.MixProject do
       source_url: @source_url,
       formatters: ["html"],
       extras: [
-        "README.md",
-        "CHANGELOG.md": [title: "Changelog"],
-        "docs/getting_started.md": [title: "Getting Started"],
-        "docs/migration.md": [title: "Migration from Elixact"],
-        "docs/dspy_integration.md": [title: "DSPy Integration"],
-        "docs/performance.md": [title: "Performance Guide"]
-      ],
-      groups_for_extras: [
-        Guides: ~r/docs\/.*/
+        "README.md"
       ],
       groups_for_modules: [
         Core: [

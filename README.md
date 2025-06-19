@@ -67,11 +67,23 @@ def create_program_signature(input_fields, output_fields) do
 end
 
 # MIPRO-style dynamic optimization
-optimized_schema = create_program_signature(
+optimized_schema = create_program_signature.(
   [{:question, :string, [required: true]}],
   [{:answer, :string, [required: true]}, 
    {:confidence, :float, [required: true, gteq: 0.0, lteq: 1.0]}]
 )
+
+# Infer schemas from examples
+examples = [
+  %{"name" => "Alice", "age" => 30},
+  %{"name" => "Bob", "age" => 25}
+]
+inferred_schema = Sinter.infer_schema(examples)
+
+# Merge schemas for composition
+input_schema = Sinter.Schema.define([{:query, :string, [required: true]}])
+output_schema = Sinter.Schema.define([{:answer, :string, [required: true]}])
+program_schema = Sinter.merge_schemas([input_schema, output_schema])
 ```
 
 ### 📋 **Unified JSON Schema Generation**
@@ -80,20 +92,25 @@ optimized_schema = create_program_signature(
 json_schema = Sinter.JsonSchema.generate(schema)
 
 # Provider-specific optimizations
-openai_schema = Sinter.JsonSchema.generate(schema, 
-  optimize_for_provider: :openai,
-  flatten: true
-)
+openai_schema = Sinter.JsonSchema.for_provider(schema, :openai)
+anthropic_schema = Sinter.JsonSchema.for_provider(schema, :anthropic)
 ```
 
 ### 🛠 **Convenience Helpers**
 ```elixir
-# One-off type validation (replaces TypeAdapter)
+# One-off type validation
 {:ok, 42} = Sinter.validate_type(:integer, "42", coerce: true)
 
-# Single field validation (replaces Wrapper)  
+# Single field validation
 {:ok, "john@example.com"} = Sinter.validate_value(:email, :string, 
   "john@example.com", [format: ~r/@/])
+
+# Multiple value validation
+{:ok, results} = Sinter.validate_many([
+  {:string, "hello"},
+  {:integer, 42},
+  {:email, :string, "test@example.com", [format: ~r/@/]}
+])
 ```
 
 ## Architecture
@@ -106,19 +123,33 @@ Sinter's architecture follows the **distillation principle** - extracting the es
 ├─────────────────────────────────────────────┤
 │  Sinter.Schema.define/2 (The Single Source) │
 ├─────────────────────────────────────────────┤
-│     Sinter.Validator.validate/3             │
+│         Sinter.Validator.validate/3         │
 ├─────────────────────────────────────────────┤
-│   Sinter.JsonSchema.generate/2              │
+│         Sinter.JsonSchema.generate/2        │
 └─────────────────────────────────────────────┘
            ▲                    ▲
            │                    │
     ┌──────────────┐    ┌──────────────┐
+    │  Built-in    │    │   Built-in   │
     │ Compile-time │    │   Runtime    │
-    │   use_schema │    │    Helpers   │
-    │    macro     │    │validate_type │
-    └──────────────┘    │validate_value│
+    │  use_schema  │    │   Helpers    │
+    │   (macro)    │    │              │
+    └──────────────┘    └──────────────┘
+                               │
+                        ┌──────────────┐
+                        │validate_type │
+                        │validate_value│
+                        │validate_many │
                         └──────────────┘
 ```
+
+**All components shown are part of Sinter** - there are no external dependencies or systems required. The architecture shows:
+
+- **Core Engine**: The unified validation pipeline that all features use internally
+- **Compile-time macro**: `use_schema` - A convenience for defining schemas at compile time
+- **Runtime helpers**: `validate_type`, `validate_value`, `validate_many` - Convenience functions for quick validation tasks
+
+Everything flows through the same core engine, ensuring consistency and reliability across all usage patterns.
 
 ## Architectural Benefits
 
@@ -200,8 +231,6 @@ Sinter provides a clean migration path from Elixact's complex APIs:
 | `Wrapper.wrap_and_validate` | `Sinter.validate_value` |
 | Multiple JSON Schema modules | `Sinter.JsonSchema.generate` |
 
-See the [Migration Guide](docs/migration.md) for detailed migration instructions.
-
 ## Key Design Decisions
 
 ### **Validation ≠ Transformation**
@@ -210,23 +239,26 @@ Sinter validates data structure and constraints. Data transformation is your app
 ### **Runtime-First Design**  
 While compile-time macros are supported, the core engine is built for runtime schema creation - perfect for dynamic frameworks.
 
-### **"Gift" Libraries Integration**
-Sinter leverages proven libraries:
-- **simdjsone** - Ultra-fast JSON parsing (2.5x faster than jiffy)
-- **ExJsonSchema** - Robust JSON Schema validation
-- **Estructura** - Advanced nested structure patterns (if needed)
+### **Proven Foundation**
+Sinter leverages battle-tested Elixir libraries:
+- **Jason** - Fast, reliable JSON parsing
+- **ExUnit** - Comprehensive testing framework
+- **Dialyzer** - Static type analysis
 
 ## Documentation
 
-- [Getting Started Guide](docs/getting_started.md)
 - [API Reference](https://hexdocs.pm/sinter)
-- [DSPy Integration Guide](docs/dspy_integration.md)
-- [Performance Guide](docs/performance.md)
-- [Migration from Elixact](docs/migration.md)
+- [Examples Directory](examples/) - Comprehensive working examples
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+We welcome contributions! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes with tests
+4. Run the full test suite (`mix test`)
+5. Submit a pull request
 
 ## License
 
