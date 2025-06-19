@@ -171,6 +171,23 @@ schema = Sinter.Schema.define(fields)
 json_schema = Sinter.JsonSchema.generate(schema)
 ```
 
+### 🚀 Try the Examples
+
+Explore comprehensive examples covering all functionality:
+
+```bash
+# Run all examples with detailed reporting
+cd examples && elixir run_all.exs
+
+# Or run individual examples
+cd examples
+elixir basic_usage.exs           # Core functionality
+elixir readme_comprehensive.exs  # All README examples  
+elixir dspy_integration.exs      # DSPy framework patterns
+```
+
+See [`examples/README.md`](examples/README.md) for detailed documentation.
+
 ## Migration from Elixact
 
 Sinter provides a clean migration path from Elixact's complex APIs:
