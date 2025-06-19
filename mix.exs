@@ -175,7 +175,7 @@ defmodule Sinter.MixProject do
         :unknown,
         :unmatched_returns
       ],
-      ignore_warnings: "dialyzer.ignore-warnings",
+      ignore_warnings: ".dialyzer_ignore.exs",
       list_unused_filters: true
     ]
   end

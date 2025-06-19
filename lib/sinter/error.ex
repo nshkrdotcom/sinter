@@ -23,7 +23,7 @@ defmodule Sinter.Error do
   ## Parameters
 
     * `path` - Path to the field that caused the error
-    * `code` - Machine-readable error code  
+    * `code` - Machine-readable error code
     * `message` - Human-readable error message
     * `context` - Optional additional context information
 
@@ -288,6 +288,50 @@ defmodule Sinter.Error do
       affected_paths: Enum.map(errors, & &1.path) |> Enum.uniq(),
       by_code: by_code
     }
+  end
+
+  @doc """
+  Adds LLM debugging context to a validation error.
+
+  This function enhances errors with information about the LLM response and
+  original prompt, making it easier to debug validation failures in DSPEx
+  programs.
+
+  ## Parameters
+
+    * `error` - The original validation error
+    * `llm_response` - The raw response from the LLM
+    * `prompt` - The original prompt sent to the LLM
+
+  ## Returns
+
+    * Enhanced error with LLM context information
+
+  ## Examples
+
+      iex> error = Sinter.Error.new([:name], :required, "field is required")
+      iex> llm_response = %{"age" => 30}  # missing name field
+      iex> prompt = "Generate a user profile with name and age"
+      iex> enhanced = Sinter.Error.with_llm_context(error, llm_response, prompt)
+      iex> enhanced.context.llm_response
+      %{"age" => 30}
+      iex> enhanced.context.prompt
+      "Generate a user profile with name and age"
+  """
+  @spec with_llm_context(t(), term(), String.t()) :: t()
+  def with_llm_context(%__MODULE__{} = error, llm_response, prompt) when is_binary(prompt) do
+    llm_context = %{
+      llm_response: llm_response,
+      prompt: prompt
+    }
+
+    case error.context do
+      nil ->
+        %{error | context: llm_context}
+
+      existing_context when is_map(existing_context) ->
+        %{error | context: Map.merge(existing_context, llm_context)}
+    end
   end
 
   # Private helper functions

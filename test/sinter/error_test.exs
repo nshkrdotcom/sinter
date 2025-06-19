@@ -216,6 +216,72 @@ defmodule Sinter.ErrorTest do
       assert summary.by_code == %{required: 1}
     end
   end
+
+  describe "with_llm_context/3 - LLM debugging context" do
+    test "adds LLM response context to error" do
+      original_error = Error.new([:name], :required, "field is required")
+      # missing name field
+      llm_response = %{"age" => 30}
+      prompt = "Generate a user profile with name and age"
+
+      enhanced_error = Error.with_llm_context(original_error, llm_response, prompt)
+
+      assert enhanced_error.path == [:name]
+      assert enhanced_error.code == :required
+      assert enhanced_error.message == "field is required"
+      assert is_map(enhanced_error.context)
+      assert enhanced_error.context.llm_response == llm_response
+      assert enhanced_error.context.prompt == prompt
+    end
+
+    test "preserves existing context when adding LLM context" do
+      original_error =
+        Error.with_context(
+          [:score],
+          :range,
+          "value out of range",
+          %{min: 0, max: 100, actual: 150}
+        )
+
+      llm_response = %{"score" => 150}
+      prompt = "Generate a score between 0 and 100"
+
+      enhanced_error = Error.with_llm_context(original_error, llm_response, prompt)
+
+      # Original context preserved
+      assert enhanced_error.context.min == 0
+      assert enhanced_error.context.max == 100
+      assert enhanced_error.context.actual == 150
+
+      # LLM context added
+      assert enhanced_error.context.llm_response == llm_response
+      assert enhanced_error.context.prompt == prompt
+    end
+
+    test "handles nil LLM response" do
+      error = Error.new([:field], :type, "type error")
+
+      enhanced_error = Error.with_llm_context(error, nil, "test prompt")
+
+      assert enhanced_error.context.llm_response == nil
+      assert enhanced_error.context.prompt == "test prompt"
+    end
+
+    test "formats enhanced error with LLM context" do
+      error = Error.new([:name], :required, "field is required")
+      llm_response = %{"wrong_field" => "value"}
+      prompt = "Generate user data"
+
+      enhanced_error = Error.with_llm_context(error, llm_response, prompt)
+      formatted = Error.format(enhanced_error)
+
+      assert formatted == "name: field is required"
+
+      # Context available for debugging but not in basic format
+      assert enhanced_error.context.llm_response
+      assert enhanced_error.context.prompt
+    end
+  end
 end
 
 defmodule Sinter.ValidationErrorTest do

@@ -517,4 +517,75 @@ defmodule Sinter.SchemaTest do
       assert {:error, _} = Validator.validate(schema, invalid_data)
     end
   end
+
+  describe "field_types/1 - schema introspection" do
+    test "extracts field types from simple schema" do
+      schema =
+        Schema.define([
+          {:name, :string, [required: true]},
+          {:age, :integer, [optional: true]},
+          {:tags, {:array, :string}, [optional: true]}
+        ])
+
+      types = Schema.field_types(schema)
+
+      assert types == %{
+               name: :string,
+               age: :integer,
+               tags: {:array, :string}
+             }
+    end
+
+    test "handles complex nested types" do
+      schema =
+        Schema.define([
+          {:coords, {:tuple, [:float, :float]}, [required: true]},
+          {:metadata, {:map, :string, :any}, [optional: true]},
+          {:status, {:union, [:string, :integer]}, [required: true]}
+        ])
+
+      types = Schema.field_types(schema)
+
+      assert types[:coords] == {:tuple, [:float, :float]}
+      assert types[:metadata] == {:map, :string, :any}
+      assert types[:status] == {:union, [:string, :integer]}
+    end
+  end
+
+  describe "constraints/1 - constraint introspection" do
+    test "extracts constraints from schema fields" do
+      schema =
+        Schema.define([
+          {:name, :string, [required: true, min_length: 2, max_length: 50]},
+          {:score, :integer, [required: true, gt: 0, lteq: 100]},
+          {:email, :string, [optional: true, format: ~r/@/]}
+        ])
+
+      constraints = Schema.constraints(schema)
+
+      assert constraints[:name] == [min_length: 2, max_length: 50]
+      assert constraints[:score] == [gt: 0, lteq: 100]
+      assert constraints[:email] == [format: ~r/@/]
+    end
+
+    test "returns empty list for fields without constraints" do
+      schema =
+        Schema.define([
+          {:simple, :string, [required: true]}
+        ])
+
+      constraints = Schema.constraints(schema)
+      assert constraints[:simple] == []
+    end
+
+    test "handles choice constraints" do
+      schema =
+        Schema.define([
+          {:status, :string, [required: true, choices: ["active", "inactive"]]}
+        ])
+
+      constraints = Schema.constraints(schema)
+      assert constraints[:status] == [choices: ["active", "inactive"]]
+    end
+  end
 end

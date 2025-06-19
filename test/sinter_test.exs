@@ -667,4 +667,151 @@ defmodule SinterTest do
       assert {:ok, %{name: "Alice", age: 30}} = batch_validator.(%{name: "Alice", age: 30})
     end
   end
+
+  describe "infer_schema/1 - dynamic schema creation" do
+    test "infers schema from simple examples" do
+      examples = [
+        %{"name" => "Alice", "age" => 30},
+        %{"name" => "Bob", "age" => 25},
+        %{"name" => "Charlie", "age" => 35}
+      ]
+
+      schema = Sinter.infer_schema(examples)
+
+      assert %Sinter.Schema{} = schema
+      fields = Sinter.Schema.fields(schema)
+      assert Map.has_key?(fields, :name)
+      assert Map.has_key?(fields, :age)
+      assert fields[:name].type == :string
+      assert fields[:age].type == :integer
+    end
+
+    test "infers schema with mixed types" do
+      examples = [
+        %{"id" => "123", "score" => 95.5, "active" => true},
+        %{"id" => "456", "score" => 87.2, "active" => false}
+      ]
+
+      schema = Sinter.infer_schema(examples)
+      fields = Sinter.Schema.fields(schema)
+
+      assert fields[:id].type == :string
+      assert fields[:score].type == :float
+      assert fields[:active].type == :boolean
+    end
+
+    test "infers schema with arrays" do
+      examples = [
+        %{"tags" => ["red", "blue"], "scores" => [1, 2, 3]},
+        %{"tags" => ["green"], "scores" => [4, 5]}
+      ]
+
+      schema = Sinter.infer_schema(examples)
+      fields = Sinter.Schema.fields(schema)
+
+      assert fields[:tags].type == {:array, :string}
+      assert fields[:scores].type == {:array, :integer}
+    end
+
+    test "handles missing fields across examples" do
+      examples = [
+        %{"name" => "Alice", "age" => 30},
+        # missing age
+        %{"name" => "Bob"},
+        # extra field
+        %{"name" => "Charlie", "age" => 35, "email" => "charlie@test.com"}
+      ]
+
+      schema = Sinter.infer_schema(examples)
+      fields = Sinter.Schema.fields(schema)
+
+      # in all examples
+      assert fields[:name].required == true
+      # missing in some
+      assert fields[:age].required == false
+      # missing in most
+      assert fields[:email].required == false
+    end
+
+    test "raises on empty examples" do
+      assert_raise ArgumentError, fn ->
+        Sinter.infer_schema([])
+      end
+    end
+
+    test "raises on non-map examples" do
+      assert_raise ArgumentError, fn ->
+        Sinter.infer_schema(["not", "maps"])
+      end
+    end
+  end
+
+  describe "merge_schemas/1 - schema composition" do
+    test "merges two simple schemas" do
+      schema1 =
+        Sinter.Schema.define([
+          {:name, :string, [required: true]},
+          {:age, :integer, [optional: true]}
+        ])
+
+      schema2 =
+        Sinter.Schema.define([
+          {:email, :string, [required: true, format: ~r/@/]},
+          {:active, :boolean, [optional: true, default: true]}
+        ])
+
+      merged = Sinter.merge_schemas([schema1, schema2])
+      fields = Sinter.Schema.fields(merged)
+
+      assert Map.has_key?(fields, :name)
+      assert Map.has_key?(fields, :age)
+      assert Map.has_key?(fields, :email)
+      assert Map.has_key?(fields, :active)
+
+      assert fields[:name].required == true
+      assert fields[:email].required == true
+      assert fields[:age].required == false
+      assert fields[:active].default == true
+    end
+
+    test "handles conflicting field definitions" do
+      schema1 =
+        Sinter.Schema.define([
+          {:name, :string, [required: true, min_length: 2]}
+        ])
+
+      schema2 =
+        Sinter.Schema.define([
+          # conflict
+          {:name, :string, [required: false, min_length: 5]}
+        ])
+
+      merged = Sinter.merge_schemas([schema1, schema2])
+      fields = Sinter.Schema.fields(merged)
+
+      # Last schema wins for conflicts
+      assert fields[:name].required == false
+      assert Enum.find(fields[:name].constraints, &match?({:min_length, 5}, &1))
+    end
+
+    test "merges schema configurations" do
+      schema1 = Sinter.Schema.define([], title: "Schema 1", strict: true)
+      schema2 = Sinter.Schema.define([], description: "Schema 2", strict: false)
+
+      merged = Sinter.merge_schemas([schema1, schema2])
+      config = Sinter.Schema.config(merged)
+
+      # first non-nil wins
+      assert config.title == "Schema 1"
+      assert config.description == "Schema 2"
+      # last wins
+      assert config.strict == false
+    end
+
+    test "raises on empty schema list" do
+      assert_raise ArgumentError, fn ->
+        Sinter.merge_schemas([])
+      end
+    end
+  end
 end

@@ -6,7 +6,7 @@ defmodule Sinter do
   specifically for dynamic frameworks. It follows the "One True Way" principle:
 
   - **One way** to define schemas (unified core engine)
-  - **One way** to validate data (single validation pipeline)  
+  - **One way** to validate data (single validation pipeline)
   - **One way** to generate JSON Schema (unified generator)
 
   ## Quick Start
@@ -26,6 +26,22 @@ defmodule Sinter do
 
       # Generate JSON Schema
       json_schema = Sinter.JsonSchema.generate(schema)
+
+  ## Dynamic Schema Creation
+
+  Sinter supports dynamic schema creation for teleprompters and runtime optimization:
+
+      # Infer schema from examples (perfect for MIPRO teleprompter)
+      examples = [
+        %{"name" => "Alice", "age" => 30},
+        %{"name" => "Bob", "age" => 25}
+      ]
+      schema = Sinter.infer_schema(examples)
+
+      # Merge schemas for signature composition
+      input_schema = Sinter.Schema.define([{:query, :string, [required: true]}])
+      output_schema = Sinter.Schema.define([{:answer, :string, [required: true]}])
+      program_schema = Sinter.merge_schemas([input_schema, output_schema])
 
   ## Convenience Helpers
 
@@ -295,6 +311,289 @@ defmodule Sinter do
 
     fn data ->
       Validator.validate(schema, data, base_opts)
+    end
+  end
+
+  # ============================================================================
+  # PHASE 2: DYNAMIC SCHEMA CREATION FOR DSPEX
+  # ============================================================================
+
+  @doc """
+  Creates a schema by analyzing examples to infer field types and requirements.
+
+  This function is essential for DSPEx teleprompters like MIPRO that need to
+  dynamically optimize schemas based on program execution examples.
+
+  ## Parameters
+
+    * `examples` - List of maps representing example data
+    * `opts` - Schema creation options
+
+  ## Options
+
+    * `:title` - Schema title
+    * `:description` - Schema description
+    * `:strict` - Whether to reject unknown fields (default: false)
+    * `:min_occurrence_ratio` - Minimum ratio for field to be considered required (default: 0.8)
+
+  ## Returns
+
+    * `Schema.t()` - A schema inferred from the examples
+
+  ## Examples
+
+      iex> examples = [
+      ...>   %{"name" => "Alice", "age" => 30},
+      ...>   %{"name" => "Bob", "age" => 25},
+      ...>   %{"name" => "Charlie", "age" => 35}
+      ...> ]
+      iex> schema = Sinter.infer_schema(examples)
+      iex> fields = Sinter.Schema.fields(schema)
+      iex> fields[:name].type
+      :string
+      iex> fields[:age].type
+      :integer
+
+  ## Algorithm
+
+  1. **Field Discovery**: Find all unique field names across examples
+  2. **Type Inference**: Determine the most common type for each field
+  3. **Requirement Analysis**: Fields present in >= min_occurrence_ratio are required
+  4. **Constraint Inference**: Infer basic constraints from value patterns
+  """
+  @spec infer_schema([map()], keyword()) :: Schema.t()
+  def infer_schema(examples, opts \\ []) when is_list(examples) do
+    if Enum.empty?(examples) do
+      raise ArgumentError, "Cannot infer schema from empty examples list"
+    end
+
+    # Validate all examples are maps
+    unless Enum.all?(examples, &is_map/1) do
+      raise ArgumentError, "All examples must be maps"
+    end
+
+    min_occurrence_ratio = Keyword.get(opts, :min_occurrence_ratio, 0.8)
+    example_count = length(examples)
+
+    # Step 1: Discover all field names
+    all_field_names =
+      examples
+      |> Enum.flat_map(&Map.keys/1)
+      |> Enum.uniq()
+
+    # Step 2: Analyze each field
+    field_specs =
+      Enum.map(all_field_names, fn field_name ->
+        analyze_field(field_name, examples, example_count, min_occurrence_ratio)
+      end)
+
+    # Step 3: Create schema with inferred fields
+    schema_opts = Keyword.drop(opts, [:min_occurrence_ratio])
+    Schema.define(field_specs, schema_opts)
+  end
+
+  @doc """
+  Merges multiple schemas into a single schema.
+
+  This is useful for DSPEx signature composition where you need to combine
+  input and output schemas or merge component signatures.
+
+  ## Parameters
+
+    * `schemas` - List of Schema.t() to merge
+    * `opts` - Optional schema configuration overrides
+
+  ## Merge Rules
+
+  1. **Fields**: All fields from all schemas are included
+  2. **Conflicts**: Later schemas override earlier ones for conflicting field definitions
+  3. **Configuration**: First non-nil configuration value wins, except for `:strict` where last wins
+
+  ## Examples
+
+      iex> input_schema = Sinter.Schema.define([
+      ...>   {:query, :string, [required: true]}
+      ...> ])
+      iex> output_schema = Sinter.Schema.define([
+      ...>   {:answer, :string, [required: true]},
+      ...>   {:confidence, :float, [optional: true]}
+      ...> ])
+      iex> merged = Sinter.merge_schemas([input_schema, output_schema])
+      iex> fields = Sinter.Schema.fields(merged)
+      iex> Map.keys(fields)
+      [:query, :answer, :confidence]
+  """
+  @spec merge_schemas([Schema.t()], keyword()) :: Schema.t()
+  def merge_schemas(schemas, opts \\ []) when is_list(schemas) do
+    if Enum.empty?(schemas) do
+      raise ArgumentError, "Cannot merge empty schemas list"
+    end
+
+    # Collect all fields from all schemas
+    all_fields =
+      schemas
+      |> Enum.flat_map(fn schema ->
+        Schema.fields(schema)
+        |> Enum.map(fn {name, field_def} ->
+          # Convert field definition back to field spec format
+          {name, field_def.type, build_field_options(field_def)}
+        end)
+      end)
+
+    # Handle field conflicts - later definitions override earlier ones
+    unique_fields =
+      all_fields
+      # Reverse so later entries have precedence
+      |> Enum.reverse()
+      |> Enum.uniq_by(fn {name, _type, _opts} -> name end)
+      # Restore original order
+      |> Enum.reverse()
+
+    # Merge configurations
+    merged_config = merge_schema_configs(schemas)
+    final_opts = Keyword.merge(merged_config, opts)
+
+    Schema.define(unique_fields, final_opts)
+  end
+
+  # ============================================================================
+  # PRIVATE HELPER FUNCTIONS FOR SCHEMA INFERENCE
+  # ============================================================================
+
+  # Analyzes a single field across all examples to determine its specification
+  @spec analyze_field(String.t() | atom(), [map()], integer(), float()) ::
+          {atom(), Sinter.Types.type_spec(), keyword()}
+  defp analyze_field(field_name, examples, example_count, min_occurrence_ratio) do
+    # Normalize field name to atom
+    field_atom = if is_binary(field_name), do: String.to_atom(field_name), else: field_name
+
+    # Extract all values for this field
+    field_values =
+      examples
+      |> Enum.map(&Map.get(&1, field_name))
+      |> Enum.reject(&is_nil/1)
+
+    occurrence_count = length(field_values)
+    occurrence_ratio = occurrence_count / example_count
+
+    # Determine if field is required
+    required = occurrence_ratio >= min_occurrence_ratio
+
+    # Infer type from values
+    inferred_type = infer_field_type(field_values)
+
+    # Build field options
+    field_opts = [required: required]
+
+    {field_atom, inferred_type, field_opts}
+  end
+
+  # Infers the type of a field from its values
+  @spec infer_field_type([term()]) :: Sinter.Types.type_spec()
+  defp infer_field_type([]), do: :any
+
+  defp infer_field_type(values) do
+    # Group values by their Elixir type
+    type_frequencies =
+      values
+      |> Enum.map(&get_elixir_type/1)
+      |> Enum.frequencies()
+
+    # Get the most common type
+    {most_common_type, _frequency} =
+      type_frequencies
+      |> Enum.max_by(fn {_type, count} -> count end)
+
+    most_common_type
+  end
+
+  # Maps an Elixir value to its Sinter type specification
+  @spec get_elixir_type(term()) :: Sinter.Types.type_spec()
+  defp get_elixir_type(value) when is_binary(value), do: :string
+  defp get_elixir_type(value) when is_integer(value), do: :integer
+  defp get_elixir_type(value) when is_float(value), do: :float
+  defp get_elixir_type(value) when is_boolean(value), do: :boolean
+  defp get_elixir_type(value) when is_atom(value), do: :atom
+  defp get_elixir_type(value) when is_map(value), do: :map
+
+  defp get_elixir_type(value) when is_list(value) do
+    case infer_array_type(value) do
+      :mixed -> {:array, :any}
+      inner_type -> {:array, inner_type}
+    end
+  end
+
+  defp get_elixir_type(_value), do: :any
+
+  # Infers the inner type of an array
+  @spec infer_array_type([term()]) :: Sinter.Types.type_spec() | :mixed
+  defp infer_array_type([]), do: :any
+
+  defp infer_array_type(list) do
+    # Get types of all elements
+    element_types =
+      list
+      |> Enum.map(&get_elixir_type/1)
+      |> Enum.uniq()
+
+    case element_types do
+      # All elements same type
+      [single_type] -> single_type
+      # Mixed types, use :any
+      _multiple -> :mixed
+    end
+  end
+
+  # Builds field options from a field definition (for schema merging)
+  @spec build_field_options(Schema.field_definition()) :: keyword()
+  defp build_field_options(field_def) do
+    opts = [required: field_def.required]
+
+    opts = if field_def.description, do: [description: field_def.description] ++ opts, else: opts
+    opts = if field_def.example, do: [example: field_def.example] ++ opts, else: opts
+    opts = if field_def.default, do: [default: field_def.default] ++ opts, else: opts
+
+    # Add constraints
+    field_def.constraints ++ opts
+  end
+
+  # Merges configuration from multiple schemas
+  @spec merge_schema_configs([Schema.t()]) :: keyword()
+  defp merge_schema_configs(schemas) do
+    configs = Enum.map(schemas, &Schema.config/1)
+
+    # Merge with specific rules
+    merged = %{
+      title: find_first_non_nil(configs, :title),
+      description: find_first_non_nil(configs, :description),
+      strict: find_last_non_nil(configs, :strict, false),
+      post_validate: find_first_non_nil(configs, :post_validate)
+    }
+
+    # Convert to keyword list, filtering out nil values
+    merged
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Enum.into([])
+  end
+
+  # Helper to find first non-nil value for a key across configs
+  @spec find_first_non_nil([map()], atom()) :: term() | nil
+  defp find_first_non_nil(configs, key) do
+    configs
+    |> Enum.map(&Map.get(&1, key))
+    |> Enum.find(&(not is_nil(&1)))
+  end
+
+  # Helper to find last non-nil value for a key across configs, with default
+  @spec find_last_non_nil([map()], atom(), term()) :: term()
+  defp find_last_non_nil(configs, key, default) do
+    configs
+    |> Enum.map(&Map.get(&1, key))
+    |> Enum.reverse()
+    |> Enum.find(&(not is_nil(&1)))
+    |> case do
+      nil -> default
+      value -> value
     end
   end
 end

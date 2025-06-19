@@ -9,7 +9,7 @@ defmodule Sinter.Validator do
   ## Validation Pipeline
 
   1. **Input Validation** - Ensure input is valid format
-  2. **Required Field Check** - Verify all required fields are present  
+  2. **Required Field Check** - Verify all required fields are present
   3. **Field Validation** - Validate each field against its type and constraints
   4. **Strict Mode Check** - Reject unknown fields if strict mode enabled
   5. **Post Validation** - Run custom cross-field validation if configured
@@ -503,6 +503,48 @@ defmodule Sinter.Validator do
             {:error, [error]}
         end
     end
+  end
+
+  @doc """
+  Validates a stream of data maps against a schema with memory efficiency.
+
+  This function is designed for processing large datasets without loading
+  everything into memory at once. Perfect for DSPEx teleprompter optimization
+  on large training sets.
+
+  ## Parameters
+
+    * `schema` - A schema created by `Sinter.Schema.define/2`
+    * `data_stream` - An Enumerable of data maps to validate
+    * `opts` - Validation options
+
+  ## Returns
+
+    * A stream of `{:ok, validated_data}` or `{:error, [Error.t()]}` tuples
+
+  ## Examples
+
+      iex> schema = Sinter.Schema.define([{:id, :integer, [required: true]}])
+      iex> data_stream = Stream.map(1..1000, &%{"id" => &1})
+      iex> results = Sinter.Validator.validate_stream(schema, data_stream)
+      iex> Enum.take(results, 3)
+      [
+        {:ok, %{id: 1}},
+        {:ok, %{id: 2}},
+        {:ok, %{id: 3}}
+      ]
+
+  ## Memory Efficiency
+
+  This function processes items one at a time and does not accumulate results,
+  making it suitable for very large datasets that would not fit in memory.
+  """
+  @spec validate_stream(Schema.t(), Enumerable.t(), validation_opts()) ::
+          Enumerable.t()
+  def validate_stream(%Schema{} = schema, data_stream, opts \\ []) do
+    Stream.map(data_stream, fn data ->
+      validate(schema, data, opts)
+    end)
   end
 
   @spec length_of(String.t() | list()) :: non_neg_integer()

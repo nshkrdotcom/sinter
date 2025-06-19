@@ -476,7 +476,7 @@ defmodule SinterIntegrationTest do
 
       assert processing_schema["oneOf"] == [
                %{"type" => "string"},
-               %{"type" => "object"}
+               %{"type" => "object", "additionalProperties" => true}
              ]
     end
 

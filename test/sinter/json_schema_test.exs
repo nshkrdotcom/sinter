@@ -625,7 +625,7 @@ defmodule Sinter.JsonSchemaTest do
       assert flexible_schema["oneOf"] == [
                %{"type" => "string"},
                %{"type" => "array", "items" => %{"type" => "integer"}},
-               %{"type" => "object"}
+               %{"type" => "object", "additionalProperties" => true}
              ]
     end
 
@@ -709,6 +709,108 @@ defmodule Sinter.JsonSchemaTest do
 
       assert is_map(json_schema)
       assert json_schema["type"] == "object"
+    end
+  end
+
+  describe "JSON Schema specification compliance" do
+    test "validates against JSON Schema Draft 2020-12 spec" do
+      schema =
+        Schema.define([
+          {:name, :string, [required: true, min_length: 1]},
+          {:age, :integer, [optional: true, gteq: 0, lteq: 150]},
+          {:email, :string, [optional: true, format: ~r/.+@.+/]},
+          {:tags, {:array, :string}, [optional: true, min_items: 1, max_items: 10]}
+        ])
+
+      json_schema = JsonSchema.generate(schema)
+
+      # Core JSON Schema structure
+      assert json_schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+      assert json_schema["type"] == "object"
+      assert is_map(json_schema["properties"])
+      assert is_list(json_schema["required"])
+
+      # Property validation
+      props = json_schema["properties"]
+      assert props["name"]["type"] == "string"
+      assert props["name"]["minLength"] == 1
+      assert props["age"]["type"] == "integer"
+      assert props["age"]["minimum"] == 0
+      assert props["age"]["maximum"] == 150
+
+      # Array validation
+      assert props["tags"]["type"] == "array"
+      assert props["tags"]["items"]["type"] == "string"
+      assert props["tags"]["minItems"] == 1
+      assert props["tags"]["maxItems"] == 10
+    end
+
+    test "handles complex nested structures" do
+      schema =
+        Schema.define([
+          {:user, {:map, :string, :any}, [required: true]},
+          {:coordinates, {:tuple, [:float, :float]}, [optional: true]},
+          {:options, {:union, [:string, {:array, :string}]}, [optional: true]}
+        ])
+
+      json_schema = JsonSchema.generate(schema)
+      props = json_schema["properties"]
+
+      # Map type
+      assert props["user"]["type"] == "object"
+      assert props["user"]["additionalProperties"] == true
+
+      # Tuple type
+      tuple_schema = props["coordinates"]
+      assert tuple_schema["type"] == "array"
+
+      assert tuple_schema["prefixItems"] == [
+               %{"type" => "number"},
+               %{"type" => "number"}
+             ]
+
+      assert tuple_schema["minItems"] == 2
+      assert tuple_schema["maxItems"] == 2
+
+      # Union type
+      union_schema = props["options"]
+
+      assert union_schema["oneOf"] == [
+               %{"type" => "string"},
+               %{"type" => "array", "items" => %{"type" => "string"}}
+             ]
+    end
+
+    test "provider optimizations maintain spec compliance" do
+      schema =
+        Schema.define([
+          {:data, :map, [required: true]}
+        ])
+
+      # Test all provider optimizations maintain compliance
+      providers = [:openai, :anthropic, :generic]
+
+      for provider <- providers do
+        json_schema = JsonSchema.for_provider(schema, provider)
+
+        # All should be valid JSON Schema
+        assert json_schema["type"] == "object"
+        assert is_map(json_schema["properties"])
+        assert is_list(json_schema["required"])
+
+        # Provider-specific checks
+        case provider do
+          :openai ->
+            assert json_schema["additionalProperties"] == false
+
+          :anthropic ->
+            assert json_schema["additionalProperties"] == false
+
+          :generic ->
+            # No specific requirements
+            :ok
+        end
+      end
     end
   end
 end
