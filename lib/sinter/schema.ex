@@ -425,7 +425,8 @@ defmodule Sinter.Schema do
       :lt,
       :lteq,
       :format,
-      :choices
+      :choices,
+      :dspex_field_type  # DSPEx metadata for field classification
     ]
 
     invalid_keys = Keyword.keys(opts) -- valid_keys
