@@ -41,6 +41,7 @@ defmodule Sinter.Types do
 
   @type composite_type ::
           {:array, type_spec()}
+          | {:array, type_spec(), keyword()}
           | {:union, [type_spec()]}
           | {:tuple, [type_spec()]}
           | {:map, type_spec(), type_spec()}
@@ -103,6 +104,27 @@ defmodule Sinter.Types do
   def validate(:atom, value, _path) when is_atom(value), do: {:ok, value}
   def validate(:any, value, _path), do: {:ok, value}
   def validate(:map, value, _path) when is_map(value), do: {:ok, value}
+
+  # Array validation with constraints
+  def validate({:array, inner_type, constraints}, value, path) when is_list(value) do
+    # First validate the array structure and elements
+    case validate({:array, inner_type}, value, path) do
+      {:ok, validated_items} ->
+        # Then validate array-level constraints
+        case validate_array_constraints(constraints, validated_items, path) do
+          :ok -> {:ok, validated_items}
+          {:error, errors} -> {:error, errors}
+        end
+
+      {:error, errors} ->
+        {:error, errors}
+    end
+  end
+
+  def validate({:array, _inner_type, _constraints}, value, path) do
+    error = Error.new(path, :type, "expected array, got #{type_name(value)}")
+    {:error, [error]}
+  end
 
   # Array validation
   def validate({:array, inner_type}, value, path) when is_list(value) do
@@ -249,40 +271,79 @@ defmodule Sinter.Types do
   def coerce(:integer, value) when is_binary(value) do
     case Integer.parse(value) do
       {int, ""} -> {:ok, int}
-      _ -> {:error, [Error.new([], :coercion, "cannot coerce to integer")]}
+      _ -> {:error, [Error.new([], :coercion, "cannot coerce '#{value}' to integer")]}
     end
   end
 
   def coerce(:integer, value) when is_integer(value), do: {:ok, value}
 
+  def coerce(:integer, value) do
+    {:error, [Error.new([], :coercion, "cannot coerce '#{inspect(value)}' to integer")]}
+  end
+
   # Float coercion
   def coerce(:float, value) when is_binary(value) do
     case Float.parse(value) do
       {float, ""} -> {:ok, float}
-      _ -> {:error, [Error.new([], :coercion, "cannot coerce to float")]}
+      _ -> {:error, [Error.new([], :coercion, "cannot coerce '#{value}' to float")]}
     end
   end
 
   def coerce(:float, value) when is_integer(value), do: {:ok, value * 1.0}
   def coerce(:float, value) when is_float(value), do: {:ok, value}
 
+  def coerce(:float, value) do
+    {:error, [Error.new([], :coercion, "cannot coerce '#{inspect(value)}' to float")]}
+  end
+
   # Boolean coercion
   def coerce(:boolean, "true"), do: {:ok, true}
   def coerce(:boolean, "false"), do: {:ok, false}
   def coerce(:boolean, value) when is_boolean(value), do: {:ok, value}
 
+  def coerce(:boolean, value) do
+    {:error, [Error.new([], :coercion, "cannot coerce '#{inspect(value)}' to boolean")]}
+  end
+
   # Atom coercion (only existing atoms for safety)
   def coerce(:atom, value) when is_binary(value) do
     {:ok, String.to_existing_atom(value)}
   rescue
-    ArgumentError -> {:error, [Error.new([], :coercion, "atom does not exist")]}
+    ArgumentError -> {:error, [Error.new([], :coercion, "atom '#{value}' does not exist")]}
   end
 
   def coerce(:atom, value) when is_atom(value), do: {:ok, value}
 
+  def coerce(:atom, value) do
+    {:error, [Error.new([], :coercion, "cannot coerce '#{inspect(value)}' to atom")]}
+  end
+
+  # Array coercion with constraints
+  def coerce({:array, inner_type, _constraints}, value) when is_list(value) do
+    # For coercion, we ignore constraints and delegate to basic array coercion
+    coerce({:array, inner_type}, value)
+  end
+
   # Array coercion
   def coerce({:array, inner_type}, value) when is_list(value) do
-    results = Enum.map(value, &coerce(inner_type, &1))
+    results =
+      value
+      |> Enum.with_index()
+      |> Enum.map(fn {item, index} ->
+        case coerce(inner_type, item) do
+          {:ok, coerced} ->
+            {:ok, coerced}
+
+          {:error, errors} ->
+            # Update error paths to include array index
+            updated_errors =
+              Enum.map(errors, fn error ->
+                %{error | path: [index]}
+              end)
+
+            {:error, updated_errors}
+        end
+      end)
 
     case Enum.split_with(results, &match?({:ok, _}, &1)) do
       {oks, []} ->
@@ -337,6 +398,20 @@ defmodule Sinter.Types do
   def to_json_schema(:any), do: %{}
   def to_json_schema(:map), do: %{"type" => "object"}
 
+  def to_json_schema({:array, inner_type, constraints}) do
+    base_schema = %{
+      "type" => "array",
+      "items" => to_json_schema(inner_type)
+    }
+
+    # Add array constraints
+    Enum.reduce(constraints, base_schema, fn
+      {:min_items, min}, acc -> Map.put(acc, "minItems", min)
+      {:max_items, max}, acc -> Map.put(acc, "maxItems", max)
+      _other_constraint, acc -> acc
+    end)
+  end
+
   def to_json_schema({:array, inner_type}) do
     %{
       "type" => "array",
@@ -374,6 +449,35 @@ defmodule Sinter.Types do
   end
 
   # Private helper functions
+
+  @spec validate_array_constraints(keyword(), [term()], [atom()]) :: :ok | {:error, [Error.t()]}
+  defp validate_array_constraints(constraints, value, path) do
+    errors =
+      Enum.flat_map(constraints, fn
+        {:min_items, min} ->
+          if length(value) >= min do
+            []
+          else
+            [Error.new(path, :min_items, "must contain at least #{min} items")]
+          end
+
+        {:max_items, max} ->
+          if length(value) <= max do
+            []
+          else
+            [Error.new(path, :max_items, "must contain at most #{max} items")]
+          end
+
+        _other_constraint ->
+          # Skip non-array constraints
+          []
+      end)
+
+    case errors do
+      [] -> :ok
+      errors -> {:error, errors}
+    end
+  end
 
   @spec try_union_types([type_spec()], term(), [atom()]) :: {:ok, term()} | {:error, []}
   defp try_union_types(types, value, path) do
