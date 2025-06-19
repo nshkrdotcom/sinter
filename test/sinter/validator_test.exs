@@ -843,4 +843,86 @@ defmodule Sinter.ValidatorTest do
       assert :format in error_codes
     end
   end
+
+  describe "validate_stream/3 - memory-efficient validation" do
+    test "validates stream of data maps" do
+      schema =
+        Schema.define([
+          {:id, :integer, [required: true]},
+          {:name, :string, [required: true]}
+        ])
+
+      data_stream =
+        Stream.map(1..100, fn i ->
+          %{"id" => i, "name" => "item_#{i}"}
+        end)
+
+      results = Validator.validate_stream(schema, data_stream)
+
+      # Results should be enumerable (a stream)
+      assert Enumerable.impl_for(results) != nil
+      validated_list = Enum.take(results, 10)
+
+      assert length(validated_list) == 10
+      assert Enum.all?(validated_list, &match?({:ok, _}, &1))
+
+      {:ok, first} = List.first(validated_list)
+      assert first[:id] == 1
+      assert first[:name] == "item_1"
+    end
+
+    test "handles validation errors in stream" do
+      schema =
+        Schema.define([
+          {:id, :integer, [required: true, gt: 0]}
+        ])
+
+      data_stream = [
+        # valid
+        %{"id" => 1},
+        # invalid (gt: 0)
+        %{"id" => -1},
+        # valid
+        %{"id" => 2}
+      ]
+
+      results = Validator.validate_stream(schema, data_stream) |> Enum.to_list()
+
+      assert length(results) == 3
+      assert match?({:ok, _}, Enum.at(results, 0))
+      assert match?({:error, _}, Enum.at(results, 1))
+      assert match?({:ok, _}, Enum.at(results, 2))
+    end
+
+    test "passes validation options to stream" do
+      schema =
+        Schema.define([
+          {:count, :integer, [required: true]}
+        ])
+
+      # string that can be coerced
+      data_stream = [%{"count" => "42"}]
+
+      results = Validator.validate_stream(schema, data_stream, coerce: true) |> Enum.to_list()
+
+      assert [{:ok, validated}] = results
+      assert validated[:count] == 42
+    end
+
+    test "handles large streams without memory issues" do
+      schema = Schema.define([{:val, :integer, [required: true]}])
+
+      # Create a large stream
+      large_stream = Stream.map(1..10_000, &%{"val" => &1})
+
+      # Process in chunks to test memory efficiency
+      result_count =
+        schema
+        |> Validator.validate_stream(large_stream)
+        |> Stream.filter(&match?({:ok, _}, &1))
+        |> Enum.count()
+
+      assert result_count == 10_000
+    end
+  end
 end

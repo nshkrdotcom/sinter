@@ -396,7 +396,7 @@ defmodule Sinter.Types do
   def to_json_schema(:boolean), do: %{"type" => "boolean"}
   def to_json_schema(:atom), do: %{"type" => "string", "description" => "Atom value"}
   def to_json_schema(:any), do: %{}
-  def to_json_schema(:map), do: %{"type" => "object"}
+  def to_json_schema(:map), do: %{"type" => "object", "additionalProperties" => true}
 
   def to_json_schema({:array, inner_type, constraints}) do
     base_schema = %{
@@ -439,12 +439,16 @@ defmodule Sinter.Types do
     base = %{"type" => "object"}
 
     case {key_type, value_type} do
+      {:string, :any} ->
+        # For :any values, use true instead of empty map
+        Map.put(base, "additionalProperties", true)
+
       {:string, value_type} ->
         Map.put(base, "additionalProperties", to_json_schema(value_type))
 
       _ ->
         # For non-string keys, we can't represent this directly in JSON Schema
-        base
+        Map.put(base, "additionalProperties", true)
     end
   end
 

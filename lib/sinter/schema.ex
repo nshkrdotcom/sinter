@@ -378,7 +378,7 @@ defmodule Sinter.Schema do
     Expected: {name, type_spec, options}
     Where:
       - name is an atom
-      - type_spec is a valid type specification 
+      - type_spec is a valid type specification
       - options is a keyword list
     """
   end
@@ -535,6 +535,72 @@ defmodule Sinter.Schema do
   end
 
   defp normalize_type_with_constraints(type_spec, _constraints), do: type_spec
+
+  @doc """
+  Extracts field types from a schema for analysis and introspection.
+
+  This is useful for DSPEx teleprompters that need to analyze the structure
+  of schemas for optimization purposes.
+
+  ## Parameters
+
+    * `schema` - A Sinter schema
+
+  ## Returns
+
+    * A map of field_name => type_spec
+
+  ## Examples
+
+      iex> schema = Sinter.Schema.define([
+      ...>   {:name, :string, [required: true]},
+      ...>   {:tags, {:array, :string}, [optional: true]}
+      ...> ])
+      iex> Sinter.Schema.field_types(schema)
+      %{
+        name: :string,
+        tags: {:array, :string}
+      }
+  """
+  @spec field_types(t()) :: %{atom() => Sinter.Types.type_spec()}
+  def field_types(%__MODULE__{fields: fields}) do
+    Map.new(fields, fn {name, field_def} ->
+      {name, field_def.type}
+    end)
+  end
+
+  @doc """
+  Extracts constraint information from schema fields.
+
+  Returns a map of field names to their constraint lists, useful for
+  teleprompter analysis and optimization.
+
+  ## Parameters
+
+    * `schema` - A Sinter schema
+
+  ## Returns
+
+    * A map of field_name => constraints_list
+
+  ## Examples
+
+      iex> schema = Sinter.Schema.define([
+      ...>   {:name, :string, [required: true, min_length: 2, max_length: 50]},
+      ...>   {:score, :integer, [required: true, gt: 0, lteq: 100]}
+      ...> ])
+      iex> Sinter.Schema.constraints(schema)
+      %{
+        name: [min_length: 2, max_length: 50],
+        score: [gt: 0, lteq: 100]
+      }
+  """
+  @spec constraints(t()) :: %{atom() => keyword()}
+  def constraints(%__MODULE__{fields: fields}) do
+    Map.new(fields, fn {name, field_def} ->
+      {name, field_def.constraints}
+    end)
+  end
 
   @spec get_sinter_version() :: String.t()
   defp get_sinter_version do

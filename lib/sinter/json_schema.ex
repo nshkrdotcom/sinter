@@ -8,7 +8,7 @@ defmodule Sinter.JsonSchema do
 
   ## Features
 
-  - Standard JSON Schema generation  
+  - Standard JSON Schema generation
   - Provider-specific optimizations (OpenAI, Anthropic, etc.)
   - Reference resolution and flattening
   - Constraint mapping
@@ -55,7 +55,7 @@ defmodule Sinter.JsonSchema do
 
     * `:optimize_for_provider` - Apply provider-specific optimizations
       - `:openai` - Optimize for OpenAI function calling
-      - `:anthropic` - Optimize for Anthropic tool use  
+      - `:anthropic` - Optimize for Anthropic tool use
       - `:generic` - Standard JSON Schema (default)
     * `:flatten` - Resolve all references inline (default: false)
     * `:include_descriptions` - Include field descriptions (default: true)
@@ -172,6 +172,7 @@ defmodule Sinter.JsonSchema do
     strict = Keyword.get(opts, :strict, config.strict)
 
     base = %{
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
       "type" => "object",
       "properties" => build_properties(schema, include_descriptions),
       "required" => build_required_list(schema),
