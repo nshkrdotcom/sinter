@@ -248,7 +248,7 @@ Sinter leverages battle-tested Elixir libraries:
 ## Documentation
 
 - [API Reference](https://hexdocs.pm/sinter)
-- [Examples Directory](examples/) - Comprehensive working examples
+- [Examples Directory](examples/README.md) - Comprehensive working examples
 
 ## Contributing
 
