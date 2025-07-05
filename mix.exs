@@ -1,7 +1,7 @@
 defmodule Sinter.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.0.1"
   @source_url "https://github.com/nshkrdotcom/sinter"
 
   def project do
@@ -85,7 +85,7 @@ defmodule Sinter.MixProject do
   defp package do
     [
       name: "sinter",
-      maintainers: ["nshkrdotcom"],
+      maintainers: ["NSHkr ZeroTrust@NSHkr.com"],
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
@@ -110,8 +110,12 @@ defmodule Sinter.MixProject do
       source_url: @source_url,
       formatters: ["html"],
       extras: [
-        "README.md"
+        "README.md",
+        "CHANGELOG.md",
+        "LICENSE"
       ],
+      before_closing_head_tag: &before_closing_head_tag/1,
+      before_closing_body_tag: &before_closing_body_tag/1,
       groups_for_modules: [
         Core: [
           Sinter,
@@ -132,6 +136,45 @@ defmodule Sinter.MixProject do
       ]
     ]
   end
+
+  defp before_closing_head_tag(:html) do
+    """
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.2.3/dist/mermaid.min.js"></script>
+    <script>
+      let initialized = false;
+
+      window.addEventListener("exdoc:loaded", () => {
+        if (!initialized) {
+          mermaid.initialize({
+            startOnLoad: false,
+            theme: document.body.className.includes("dark") ? "dark" : "default"
+          });
+          initialized = true;
+        }
+
+        let id = 0;
+        for (const codeEl of document.querySelectorAll("pre code.mermaid")) {
+          const preEl = codeEl.parentElement;
+          const graphDefinition = codeEl.textContent;
+          const graphEl = document.createElement("div");
+          const graphId = "mermaid-graph-" + id++;
+          mermaid.render(graphId, graphDefinition).then(({svg, bindFunctions}) => {
+            graphEl.innerHTML = svg;
+            bindFunctions?.(graphEl);
+            preEl.insertAdjacentElement("afterend", graphEl);
+            preEl.remove();
+          });
+        }
+      });
+    </script>
+    """
+  end
+
+  defp before_closing_head_tag(:epub), do: ""
+
+  defp before_closing_body_tag(:html), do: ""
+
+  defp before_closing_body_tag(:epub), do: ""
 
   defp aliases do
     [
