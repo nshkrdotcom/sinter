@@ -18,14 +18,14 @@ For a comprehensive test of all functionality:
 
 ```bash
 # From the project root (recommended)
-cd examples && elixir run_all.exs
+examples/run_all.sh
 
 # Or from the examples directory
 cd examples
-elixir run_all.exs
+./run_all.sh
 ```
 
-**Important**: The script must be run from within the `examples/` directory so it can find the example files.
+`run_all.sh` resolves its own directory, so it can be run from the project root or inside `examples/`.
 
 This will execute all examples in sequence and provide a summary report with:
 - ✅ Success/failure status for each example
@@ -100,8 +100,17 @@ Focuses specifically on JSON Schema generation capabilities:
 - Schema validation and compatibility checking
 - Performance benchmarking
 
-### 6. `run_all.exs`
-**Complete Test Suite**
+### 6. `run_all.sh`
+**Shell Runner (Recommended)**
+
+Runs the full example suite from any working directory:
+
+```bash
+examples/run_all.sh
+```
+
+### 7. `run_all.exs`
+**Complete Test Suite (Elixir)**
 
 Executes all examples in sequence with detailed reporting:
 

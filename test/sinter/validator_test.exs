@@ -29,10 +29,10 @@ defmodule Sinter.ValidatorTest do
       }
 
       assert {:ok, validated} = Validator.validate(schema, valid_data)
-      assert validated[:name] == "Alice"
-      assert validated[:age] == 30
-      assert validated[:email] == "alice@example.com"
-      assert validated[:tags] == ["developer", "elixir"]
+      assert validated["name"] == "Alice"
+      assert validated["age"] == 30
+      assert validated["email"] == "alice@example.com"
+      assert validated["tags"] == ["developer", "elixir"]
     end
 
     test "validates minimal valid data (only required fields)" do
@@ -41,10 +41,10 @@ defmodule Sinter.ValidatorTest do
       minimal_data = %{"name" => "Bob"}
 
       assert {:ok, validated} = Validator.validate(schema, minimal_data)
-      assert validated[:name] == "Bob"
-      assert Map.has_key?(validated, :age) == false
-      assert Map.has_key?(validated, :email) == false
-      assert Map.has_key?(validated, :tags) == false
+      assert validated["name"] == "Bob"
+      assert Map.has_key?(validated, "age") == false
+      assert Map.has_key?(validated, "email") == false
+      assert Map.has_key?(validated, "tags") == false
     end
 
     test "rejects non-map input" do
@@ -65,8 +65,8 @@ defmodule Sinter.ValidatorTest do
       }
 
       assert {:ok, validated} = Validator.validate(schema, data_with_atoms)
-      assert validated[:name] == "Charlie"
-      assert validated[:age] == 25
+      assert validated["name"] == "Charlie"
+      assert validated["age"] == 25
     end
 
     test "validates with mixed string/atom keys" do
@@ -78,8 +78,8 @@ defmodule Sinter.ValidatorTest do
       }
 
       assert {:ok, validated} = Validator.validate(schema, mixed_data)
-      assert validated[:name] == "Diana"
-      assert validated[:age] == 35
+      assert validated["name"] == "Diana"
+      assert validated["age"] == 35
     end
   end
 
@@ -91,7 +91,7 @@ defmodule Sinter.ValidatorTest do
 
       assert {:error, [error]} = Validator.validate(schema, data_missing_name)
       assert error.code == :required
-      assert error.path == [:name]
+      assert error.path == ["name"]
       assert error.message == "field is required"
     end
 
@@ -109,8 +109,8 @@ defmodule Sinter.ValidatorTest do
       assert length(errors) == 2
 
       error_paths = Enum.map(errors, & &1.path)
-      assert [:field1] in error_paths
-      assert [:field2] in error_paths
+      assert ["field1"] in error_paths
+      assert ["field2"] in error_paths
     end
 
     test "allows missing optional fields" do
@@ -123,8 +123,8 @@ defmodule Sinter.ValidatorTest do
       data = %{"required_field" => "present"}
 
       assert {:ok, validated} = Validator.validate(schema, data)
-      assert validated[:required_field] == "present"
-      assert Map.has_key?(validated, :optional_field) == false
+      assert validated["required_field"] == "present"
+      assert Map.has_key?(validated, "optional_field") == false
     end
   end
 
@@ -141,10 +141,10 @@ defmodule Sinter.ValidatorTest do
       data = %{"name" => "Test"}
 
       assert {:ok, validated} = Validator.validate(schema, data)
-      assert validated[:name] == "Test"
-      assert validated[:active] == true
-      assert validated[:count] == 0
-      assert validated[:tags] == []
+      assert validated["name"] == "Test"
+      assert validated["active"] == true
+      assert validated["count"] == 0
+      assert validated["tags"] == []
     end
 
     test "uses provided values over defaults" do
@@ -162,9 +162,19 @@ defmodule Sinter.ValidatorTest do
       }
 
       assert {:ok, validated} = Validator.validate(schema, data)
-      assert validated[:name] == "Test"
-      assert validated[:active] == false
-      assert validated[:count] == 42
+      assert validated["name"] == "Test"
+      assert validated["active"] == false
+      assert validated["count"] == 42
+    end
+
+    test "applies defaults before required checks" do
+      schema =
+        Schema.define([
+          {:name, :string, [required: true, default: "anonymous"]}
+        ])
+
+      assert {:ok, validated} = Validator.validate(schema, %{})
+      assert validated["name"] == "anonymous"
     end
 
     test "nil defaults are not applied" do
@@ -177,8 +187,8 @@ defmodule Sinter.ValidatorTest do
       data = %{"name" => "Test"}
 
       assert {:ok, validated} = Validator.validate(schema, data)
-      assert validated[:name] == "Test"
-      assert Map.has_key?(validated, :nullable) == false
+      assert validated["name"] == "Test"
+      assert Map.has_key?(validated, "nullable") == false
     end
   end
 
@@ -191,7 +201,7 @@ defmodule Sinter.ValidatorTest do
 
       assert {:error, [error]} = Validator.validate(schema, %{"text" => 123})
       assert error.code == :type
-      assert error.path == [:text]
+      assert error.path == ["text"]
     end
 
     test "validates integer fields" do
@@ -203,7 +213,7 @@ defmodule Sinter.ValidatorTest do
 
       assert {:error, [error]} = Validator.validate(schema, %{"number" => "42"})
       assert error.code == :type
-      assert error.path == [:number]
+      assert error.path == ["number"]
 
       assert {:error, [error]} = Validator.validate(schema, %{"number" => 3.14})
       assert error.code == :type
@@ -217,7 +227,7 @@ defmodule Sinter.ValidatorTest do
 
       assert {:error, [error]} = Validator.validate(schema, %{"decimal" => 42})
       assert error.code == :type
-      assert error.path == [:decimal]
+      assert error.path == ["decimal"]
     end
 
     test "validates boolean fields" do
@@ -228,7 +238,7 @@ defmodule Sinter.ValidatorTest do
 
       assert {:error, [error]} = Validator.validate(schema, %{"flag" => "true"})
       assert error.code == :type
-      assert error.path == [:flag]
+      assert error.path == ["flag"]
     end
 
     test "validates array fields" do
@@ -239,12 +249,12 @@ defmodule Sinter.ValidatorTest do
 
       assert {:error, [error]} = Validator.validate(schema, %{"items" => "not array"})
       assert error.code == :type
-      assert error.path == [:items]
+      assert error.path == ["items"]
 
       # Invalid array element type
       assert {:error, [error]} = Validator.validate(schema, %{"items" => ["valid", 123]})
       assert error.code == :type
-      assert error.path == [:items, 1]
+      assert error.path == ["items", 1]
     end
   end
 
@@ -263,13 +273,13 @@ defmodule Sinter.ValidatorTest do
       # Too short
       assert {:error, [error]} = Validator.validate(schema, %{"short" => "a"})
       assert error.code == :min_length
-      assert error.path == [:short]
+      assert error.path == ["short"]
       assert error.message =~ "at least 2"
 
       # Too long
       assert {:error, [error]} = Validator.validate(schema, %{"short" => "abcdef"})
       assert error.code == :max_length
-      assert error.path == [:short]
+      assert error.path == ["short"]
       assert error.message =~ "at most 5"
     end
 
@@ -287,13 +297,13 @@ defmodule Sinter.ValidatorTest do
       # Too few
       assert {:error, [error]} = Validator.validate(schema, %{"items" => []})
       assert error.code == :min_items
-      assert error.path == [:items]
+      assert error.path == ["items"]
       assert error.message =~ "at least 1"
 
       # Too many
       assert {:error, [error]} = Validator.validate(schema, %{"items" => ["a", "b", "c", "d"]})
       assert error.code == :max_items
-      assert error.path == [:items]
+      assert error.path == ["items"]
       assert error.message =~ "at most 3"
     end
 
@@ -312,25 +322,25 @@ defmodule Sinter.ValidatorTest do
       # Invalid score (too low)
       assert {:error, [error]} = Validator.validate(schema, %{"score" => 0, "rating" => 3.0})
       assert error.code == :gt
-      assert error.path == [:score]
+      assert error.path == ["score"]
       assert error.message =~ "greater than 0"
 
       # Invalid score (too high)
       assert {:error, [error]} = Validator.validate(schema, %{"score" => 100, "rating" => 3.0})
       assert error.code == :lt
-      assert error.path == [:score]
+      assert error.path == ["score"]
       assert error.message =~ "less than 100"
 
       # Invalid rating (too low)
       assert {:error, [error]} = Validator.validate(schema, %{"score" => 50, "rating" => 0.5})
       assert error.code == :gteq
-      assert error.path == [:rating]
+      assert error.path == ["rating"]
       assert error.message =~ "greater than or equal to 1.0"
 
       # Invalid rating (too high)
       assert {:error, [error]} = Validator.validate(schema, %{"score" => 50, "rating" => 5.5})
       assert error.code == :lteq
-      assert error.path == [:rating]
+      assert error.path == ["rating"]
       assert error.message =~ "less than or equal to 5.0"
     end
 
@@ -356,7 +366,7 @@ defmodule Sinter.ValidatorTest do
                })
 
       assert error.code == :format
-      assert error.path == [:email]
+      assert error.path == ["email"]
       assert error.message =~ "does not match"
 
       # Invalid phone format
@@ -367,7 +377,7 @@ defmodule Sinter.ValidatorTest do
                })
 
       assert error.code == :format
-      assert error.path == [:phone]
+      assert error.path == ["phone"]
     end
 
     test "validates choice constraints" do
@@ -386,7 +396,7 @@ defmodule Sinter.ValidatorTest do
                Validator.validate(schema, %{"status" => "unknown", "priority" => 3})
 
       assert error.code == :choices
-      assert error.path == [:status]
+      assert error.path == ["status"]
       assert error.message =~ "must be one of"
 
       # Invalid priority choice
@@ -394,7 +404,7 @@ defmodule Sinter.ValidatorTest do
                Validator.validate(schema, %{"status" => "active", "priority" => 6})
 
       assert error.code == :choices
-      assert error.path == [:priority]
+      assert error.path == ["priority"]
     end
 
     test "validates multiple constraints on single field" do
@@ -432,9 +442,9 @@ defmodule Sinter.ValidatorTest do
       }
 
       assert {:ok, validated} = Validator.validate(schema, data, coerce: true)
-      assert validated[:count] == 42
-      assert validated[:price] == 19.99
-      assert validated[:active] == true
+      assert validated["count"] == 42
+      assert validated["price"] == 19.99
+      assert validated["active"] == true
     end
 
     test "coercion respects constraints" do
@@ -445,12 +455,12 @@ defmodule Sinter.ValidatorTest do
 
       # Valid after coercion
       assert {:ok, validated} = Validator.validate(schema, %{"count" => "42"}, coerce: true)
-      assert validated[:count] == 42
+      assert validated["count"] == 42
 
       # Invalid constraint after coercion
       assert {:error, [error]} = Validator.validate(schema, %{"count" => "0"}, coerce: true)
       assert error.code == :gt
-      assert error.path == [:count]
+      assert error.path == ["count"]
     end
 
     test "coercion fails gracefully for invalid values" do
@@ -463,7 +473,7 @@ defmodule Sinter.ValidatorTest do
                Validator.validate(schema, %{"count" => "not_a_number"}, coerce: true)
 
       assert error.code == :coercion
-      assert error.path == [:count]
+      assert error.path == ["count"]
     end
 
     test "coerces array elements individually" do
@@ -475,7 +485,7 @@ defmodule Sinter.ValidatorTest do
       data = %{"numbers" => ["1", "2", "3"]}
 
       assert {:ok, validated} = Validator.validate(schema, data, coerce: true)
-      assert validated[:numbers] == [1, 2, 3]
+      assert validated["numbers"] == [1, 2, 3]
 
       # Partial coercion failure
       data_mixed = %{"numbers" => ["1", "invalid", "3"]}
@@ -483,7 +493,7 @@ defmodule Sinter.ValidatorTest do
       assert length(errors) == 1
       error = List.first(errors)
       assert error.code == :coercion
-      assert error.path == [:numbers, 1]
+      assert error.path == ["numbers", 1]
     end
   end
 
@@ -504,9 +514,9 @@ defmodule Sinter.ValidatorTest do
       }
 
       assert {:ok, validated} = Validator.validate(schema, data)
-      assert validated[:name] == "Alice"
+      assert validated["name"] == "Alice"
       # Extra fields are not included in result
-      assert Map.has_key?(validated, :extra_field) == false
+      assert Map.has_key?(validated, "extra_field") == false
     end
 
     test "rejects extra fields when strict" do
@@ -554,8 +564,8 @@ defmodule Sinter.ValidatorTest do
   describe "validate/3 - post validation" do
     test "executes post-validation function" do
       post_validate = fn data ->
-        if Map.get(data, :password) == Map.get(data, :password_confirmation) do
-          {:ok, Map.delete(data, :password_confirmation)}
+        if Map.get(data, "password") == Map.get(data, "password_confirmation") do
+          {:ok, Map.delete(data, "password_confirmation")}
         else
           {:error, "Passwords do not match"}
         end
@@ -577,8 +587,8 @@ defmodule Sinter.ValidatorTest do
       }
 
       assert {:ok, validated} = Validator.validate(schema, valid_data)
-      assert validated[:password] == "secret123"
-      assert Map.has_key?(validated, :password_confirmation) == false
+      assert validated["password"] == "secret123"
+      assert Map.has_key?(validated, "password_confirmation") == false
 
       # Invalid case
       invalid_data = %{
@@ -634,8 +644,8 @@ defmodule Sinter.ValidatorTest do
       data = %{"name" => "Alice", "age" => 30}
 
       validated = Validator.validate!(schema, data)
-      assert validated[:name] == "Alice"
-      assert validated[:age] == 30
+      assert validated["name"] == "Alice"
+      assert validated["age"] == 30
     end
 
     test "raises ValidationError on failure" do
@@ -677,9 +687,9 @@ defmodule Sinter.ValidatorTest do
 
       assert {:ok, validated_list} = Validator.validate_many(schema, data_list)
       assert length(validated_list) == 3
-      assert Enum.at(validated_list, 0)[:name] == "Alice"
-      assert Enum.at(validated_list, 1)[:name] == "Bob"
-      assert Enum.at(validated_list, 2)[:name] == "Charlie"
+      assert Enum.at(validated_list, 0)["name"] == "Alice"
+      assert Enum.at(validated_list, 1)["name"] == "Bob"
+      assert Enum.at(validated_list, 2)["name"] == "Charlie"
     end
 
     test "reports errors by index" do
@@ -722,7 +732,19 @@ defmodule Sinter.ValidatorTest do
       assert {:error, error_map} = Validator.validate_many(schema, data_list)
       error = List.first(error_map[1])
       # [batch_index, field, array_index]
-      assert error.path == [1, :items, 1]
+      assert error.path == [1, "items", 1]
+    end
+
+    test "preserves base path order for batch errors" do
+      schema = Schema.define([{:items, {:array, :string}, [required: true]}])
+
+      data_list = [%{"items" => ["ok", 123]}]
+
+      assert {:error, error_map} =
+               Validator.validate_many(schema, data_list, path: ["root", "batch"])
+
+      error = List.first(error_map[0])
+      assert error.path == ["root", "batch", 0, "items", 1]
     end
 
     test "handles empty list" do
@@ -748,7 +770,7 @@ defmodule Sinter.ValidatorTest do
       }
 
       assert {:error, [error]} = Validator.validate(schema, data)
-      assert error.path == [:users, 1]
+      assert error.path == ["users", 1]
       assert error.code == :type
     end
 
@@ -767,7 +789,7 @@ defmodule Sinter.ValidatorTest do
       }
 
       assert {:error, [error]} = Validator.validate(schema, data)
-      assert error.path == [:nested, 1, 1]
+      assert error.path == ["nested", 1, 1]
       assert error.code == :type
     end
   end
@@ -790,7 +812,7 @@ defmodule Sinter.ValidatorTest do
       data = %{"items" => large_list}
 
       assert {:ok, validated} = Validator.validate(schema, data)
-      assert validated[:items] == large_list
+      assert validated["items"] == large_list
     end
 
     test "handles deeply nested structures" do
@@ -814,7 +836,7 @@ defmodule Sinter.ValidatorTest do
       data = %{"deep" => deep_data}
 
       assert {:ok, validated} = Validator.validate(schema, data)
-      assert validated[:deep] == deep_data
+      assert validated["deep"] == deep_data
     end
 
     test "accumulates all validation errors" do
@@ -867,8 +889,8 @@ defmodule Sinter.ValidatorTest do
       assert Enum.all?(validated_list, &match?({:ok, _}, &1))
 
       {:ok, first} = List.first(validated_list)
-      assert first[:id] == 1
-      assert first[:name] == "item_1"
+      assert first["id"] == 1
+      assert first["name"] == "item_1"
     end
 
     test "handles validation errors in stream" do
@@ -906,7 +928,7 @@ defmodule Sinter.ValidatorTest do
       results = Validator.validate_stream(schema, data_stream, coerce: true) |> Enum.to_list()
 
       assert [{:ok, validated}] = results
-      assert validated[:count] == 42
+      assert validated["count"] == 42
     end
 
     test "handles large streams without memory issues" do

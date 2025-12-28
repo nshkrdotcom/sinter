@@ -1,5 +1,8 @@
 # Exdantic → Sinter Merge Plan
 
+> Status: Superseded. The 2025-12-27 big-bang refactor defines the current
+> Sinter architecture. This document is retained for historical planning context.
+
 ## Executive Summary
 
 This document outlines the plan to merge Exdantic's advanced features into Sinter, creating a unified validation library that combines Sinter's clean architecture with Exdantic's rich feature set.

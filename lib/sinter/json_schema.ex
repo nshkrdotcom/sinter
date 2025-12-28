@@ -33,8 +33,11 @@ defmodule Sinter.JsonSchema do
 
   alias Sinter.{Schema, Types}
 
+  @type draft :: :draft2020_12 | :draft7
+
   @type generation_opts :: [
           optimize_for_provider: :openai | :anthropic | :generic,
+          draft: draft(),
           flatten: boolean(),
           include_descriptions: boolean(),
           strict: boolean()
@@ -97,19 +100,37 @@ defmodule Sinter.JsonSchema do
     include_descriptions = Keyword.get(opts, :include_descriptions, true)
     provider = Keyword.get(opts, :optimize_for_provider, :generic)
     flatten = Keyword.get(opts, :flatten, false)
+    draft = determine_draft(opts, provider)
+    strict_override? = Keyword.has_key?(opts, :strict)
+    strict = Keyword.get(opts, :strict, Schema.strict?(schema))
+
+    builder_opts =
+      opts
+      |> Keyword.put(:draft, draft)
+      |> Keyword.put(:strict, strict)
+      |> Keyword.put(:strict_override?, strict_override?)
 
     # Build base JSON Schema
-    base_schema = build_base_schema(schema, include_descriptions, opts)
+    base_schema =
+      build_base_schema(schema, include_descriptions, builder_opts)
 
     # Apply provider optimizations
     optimized_schema = apply_provider_optimizations(base_schema, provider)
 
+    # Apply recursive strictness for provider optimizations or explicit strict mode
+    final_schema =
+      if provider in [:openai, :anthropic] or strict do
+        apply_recursive_strictness(optimized_schema)
+      else
+        optimized_schema
+      end
+
     # Flatten if requested
     final_schema =
       if flatten do
-        flatten_schema(optimized_schema)
+        flatten_schema(final_schema)
       else
-        optimized_schema
+        final_schema
       end
 
     final_schema
@@ -135,10 +156,16 @@ defmodule Sinter.JsonSchema do
   @doc """
   Validates a JSON Schema for correctness and compatibility.
 
+  Uses `JSV` to validate against the JSON Schema meta-schema.
+
   ## Parameters
 
     * `json_schema` - The JSON Schema to validate
     * `opts` - Validation options
+
+  ## Options
+
+    * `:draft` - Override default meta-schema (`:draft2020_12` or `:draft7`)
 
   ## Returns
 
@@ -146,21 +173,16 @@ defmodule Sinter.JsonSchema do
     * `{:error, issues}` if problems are found
   """
   @spec validate_schema(map(), keyword()) :: :ok | {:error, [String.t()]}
-  def validate_schema(json_schema, _opts \\ []) do
-    issues = []
+  def validate_schema(json_schema, opts \\ []) do
+    build_opts =
+      case Keyword.get(opts, :draft) do
+        nil -> []
+        draft -> [default_meta: draft_schema_uri(draft)]
+      end
 
-    # Check required structure
-    issues = check_basic_structure(json_schema, issues)
-
-    # Check type consistency
-    issues = check_type_consistency(json_schema, issues)
-
-    # Check constraint validity
-    issues = check_constraint_validity(json_schema, issues)
-
-    case issues do
-      [] -> :ok
-      problems -> {:error, Enum.reverse(problems)}
+    case JSV.build(json_schema, build_opts) do
+      {:ok, _root} -> :ok
+      {:error, error} -> {:error, [Exception.message(error)]}
     end
   end
 
@@ -170,11 +192,12 @@ defmodule Sinter.JsonSchema do
   defp build_base_schema(schema, include_descriptions, opts) do
     config = Schema.config(schema)
     strict = Keyword.get(opts, :strict, config.strict)
+    draft = Keyword.get(opts, :draft, :draft2020_12)
 
     base = %{
-      "$schema" => "https://json-schema.org/draft/2020-12/schema",
+      "$schema" => draft_schema_uri(draft),
       "type" => "object",
-      "properties" => build_properties(schema, include_descriptions),
+      "properties" => build_properties(schema, include_descriptions, opts),
       "required" => build_required_list(schema),
       "additionalProperties" => not strict
     }
@@ -186,20 +209,20 @@ defmodule Sinter.JsonSchema do
     |> add_sinter_metadata(schema)
   end
 
-  @spec build_properties(Schema.t(), boolean()) :: map()
-  defp build_properties(schema, include_descriptions) do
+  @spec build_properties(Schema.t(), boolean(), keyword()) :: map()
+  defp build_properties(schema, include_descriptions, opts) do
     schema.fields
     |> Enum.map(fn {field_name, field_def} ->
-      property_schema = build_property_schema(field_def, include_descriptions)
+      property_schema = build_property_schema(field_def, include_descriptions, opts)
       {to_string(field_name), property_schema}
     end)
     |> Map.new()
   end
 
-  @spec build_property_schema(Schema.field_definition(), boolean()) :: map()
-  defp build_property_schema(field_def, include_descriptions) do
+  @spec build_property_schema(Schema.field_definition(), boolean(), keyword()) :: map()
+  defp build_property_schema(field_def, include_descriptions, opts) do
     # Convert type to JSON Schema
-    type_schema = Types.to_json_schema(field_def.type)
+    type_schema = build_type_schema(field_def.type, include_descriptions, opts)
 
     # Add constraints
     constrained_schema = add_constraints(type_schema, field_def.constraints)
@@ -209,6 +232,100 @@ defmodule Sinter.JsonSchema do
     |> maybe_add_description(field_def.description, include_descriptions)
     |> maybe_add_example(field_def.example)
     |> maybe_add_default(field_def.default)
+  end
+
+  defp build_type_schema({:array, inner_type, constraints}, include_descriptions, opts) do
+    base = %{
+      "type" => "array",
+      "items" => build_type_schema(inner_type, include_descriptions, opts)
+    }
+
+    Enum.reduce(constraints, base, fn
+      {:min_items, min}, acc -> Map.put(acc, "minItems", min)
+      {:max_items, max}, acc -> Map.put(acc, "maxItems", max)
+      _other, acc -> acc
+    end)
+  end
+
+  defp build_type_schema({:array, inner_type}, include_descriptions, opts) do
+    %{
+      "type" => "array",
+      "items" => build_type_schema(inner_type, include_descriptions, opts)
+    }
+  end
+
+  defp build_type_schema({:union, types}, include_descriptions, opts) do
+    %{"oneOf" => Enum.map(types, &build_type_schema(&1, include_descriptions, opts))}
+  end
+
+  defp build_type_schema({:tuple, types}, include_descriptions, opts) do
+    %{
+      "type" => "array",
+      "items" => false,
+      "prefixItems" => Enum.map(types, &build_type_schema(&1, include_descriptions, opts)),
+      "minItems" => length(types),
+      "maxItems" => length(types)
+    }
+  end
+
+  defp build_type_schema({:map, key_type, value_type}, include_descriptions, opts) do
+    base = %{"type" => "object"}
+
+    case {key_type, value_type} do
+      {:string, :any} ->
+        Map.put(base, "additionalProperties", true)
+
+      {:string, value_type} ->
+        Map.put(
+          base,
+          "additionalProperties",
+          build_type_schema(value_type, include_descriptions, opts)
+        )
+
+      _ ->
+        Map.put(base, "additionalProperties", true)
+    end
+  end
+
+  defp build_type_schema({:nullable, inner_type}, include_descriptions, opts) do
+    %{
+      "anyOf" => [
+        build_type_schema(inner_type, include_descriptions, opts),
+        %{"type" => "null"}
+      ]
+    }
+  end
+
+  defp build_type_schema({:object, %Schema{} = nested_schema}, include_descriptions, opts) do
+    build_object_schema(nested_schema, include_descriptions, opts)
+  end
+
+  defp build_type_schema({:object, nested_fields}, include_descriptions, opts)
+       when is_list(nested_fields) do
+    nested_schema = Schema.define(nested_fields)
+    build_object_schema(nested_schema, include_descriptions, opts)
+  end
+
+  defp build_type_schema(type_spec, _include_descriptions, _opts) do
+    Types.to_json_schema(type_spec)
+  end
+
+  defp build_object_schema(%Schema{} = schema, include_descriptions, opts) do
+    config = Schema.config(schema)
+    strict_override? = Keyword.get(opts, :strict_override?, false)
+    strict_value = Keyword.get(opts, :strict, config.strict)
+    strict = if strict_override?, do: strict_value, else: config.strict
+
+    base = %{
+      "type" => "object",
+      "properties" => build_properties(schema, include_descriptions, opts),
+      "required" => build_required_list(schema),
+      "additionalProperties" => not strict
+    }
+
+    base
+    |> maybe_add_title(config.title)
+    |> maybe_add_description(config.description, include_descriptions)
   end
 
   @spec add_constraints(map(), keyword()) :: map()
@@ -287,7 +404,7 @@ defmodule Sinter.JsonSchema do
   defp optimize_for_function_calling(schema) do
     # OpenAI function calling optimizations
     schema
-    |> remove_unsupported_formats([:date, :time, :email])
+    |> remove_unsupported_formats(["date", "time", "email"])
     |> simplify_complex_unions()
   end
 
@@ -295,11 +412,11 @@ defmodule Sinter.JsonSchema do
   defp optimize_for_tool_use(schema) do
     # Anthropic tool use optimizations
     schema
-    |> remove_unsupported_formats([:uri, :uuid])
+    |> remove_unsupported_formats(["uri", "uuid"])
     |> ensure_object_properties()
   end
 
-  @spec remove_unsupported_formats(map(), [atom()]) :: map()
+  @spec remove_unsupported_formats(map(), [String.t()]) :: map()
   defp remove_unsupported_formats(schema, unsupported_formats) do
     case Map.get(schema, "properties") do
       nil ->
@@ -318,11 +435,11 @@ defmodule Sinter.JsonSchema do
     end
   end
 
-  @spec remove_format_if_unsupported(map(), [atom()]) :: map()
+  @spec remove_format_if_unsupported(map(), [String.t()]) :: map()
   defp remove_format_if_unsupported(property_schema, unsupported_formats) do
     case Map.get(property_schema, "format") do
       format when is_binary(format) ->
-        if String.to_atom(format) in unsupported_formats do
+        if format in unsupported_formats do
           Map.delete(property_schema, "format")
         else
           property_schema
@@ -373,12 +490,50 @@ defmodule Sinter.JsonSchema do
 
   defp ensure_object_properties(schema), do: schema
 
+  defp apply_recursive_strictness(schema) when is_map(schema) do
+    schema =
+      case schema do
+        %{"type" => "object", "properties" => _props} ->
+          Map.put(schema, "additionalProperties", false)
+
+        _ ->
+          schema
+      end
+
+    Enum.reduce(schema, %{}, fn {key, value}, acc ->
+      Map.put(acc, key, apply_recursive_strictness(value))
+    end)
+  end
+
+  defp apply_recursive_strictness(schema) when is_list(schema) do
+    Enum.map(schema, &apply_recursive_strictness/1)
+  end
+
+  defp apply_recursive_strictness(schema), do: schema
+
   @spec flatten_schema(map()) :: map()
   defp flatten_schema(schema) do
     # For now, just return as-is since we're not using $ref in base implementation
     # Future enhancement: implement full reference resolution
     schema
   end
+
+  defp determine_draft(opts, provider) do
+    case Keyword.get(opts, :draft) do
+      nil ->
+        if provider in [:openai, :anthropic] do
+          :draft7
+        else
+          :draft2020_12
+        end
+
+      draft ->
+        draft
+    end
+  end
+
+  defp draft_schema_uri(:draft7), do: "http://json-schema.org/draft-07/schema#"
+  defp draft_schema_uri(:draft2020_12), do: "https://json-schema.org/draft/2020-12/schema"
 
   # Metadata and utility functions
 
@@ -414,92 +569,5 @@ defmodule Sinter.JsonSchema do
     }
 
     Map.merge(schema, metadata)
-  end
-
-  # Validation helper functions
-
-  @spec check_basic_structure(map(), [String.t()]) :: [String.t()]
-  defp check_basic_structure(schema, issues) do
-    case Map.get(schema, "type") do
-      "object" ->
-        if Map.has_key?(schema, "properties") do
-          issues
-        else
-          ["Object schema missing 'properties'" | issues]
-        end
-
-      nil ->
-        ["Schema missing 'type' field" | issues]
-
-      _ ->
-        issues
-    end
-  end
-
-  @spec check_type_consistency(map(), [String.t()]) :: [String.t()]
-  defp check_type_consistency(schema, issues) do
-    # Check that type field has valid value
-    case Map.get(schema, "type") do
-      type when type in ["object", "array", "string", "number", "integer", "boolean", "null"] ->
-        issues
-
-      type when is_binary(type) ->
-        ["Invalid type: #{type}" | issues]
-
-      _ ->
-        issues
-    end
-  end
-
-  @spec check_constraint_validity(map(), [String.t()]) :: [String.t()]
-  defp check_constraint_validity(schema, issues) do
-    # Check constraints at root level
-    issues = check_numeric_constraints(schema, issues)
-    issues = check_string_constraints(schema, issues)
-    issues = check_array_constraints(schema, issues)
-
-    # Check constraints in properties
-    case Map.get(schema, "properties") do
-      nil ->
-        issues
-
-      properties ->
-        Enum.reduce(properties, issues, fn {_name, prop_schema}, acc ->
-          check_constraint_validity(prop_schema, acc)
-        end)
-    end
-  end
-
-  @spec check_numeric_constraints(map(), [String.t()]) :: [String.t()]
-  defp check_numeric_constraints(schema, issues) do
-    case {Map.get(schema, "minimum"), Map.get(schema, "maximum")} do
-      {min, max} when is_number(min) and is_number(max) and min > max ->
-        ["minimum (#{min}) cannot be greater than maximum (#{max})" | issues]
-
-      _ ->
-        issues
-    end
-  end
-
-  @spec check_string_constraints(map(), [String.t()]) :: [String.t()]
-  defp check_string_constraints(schema, issues) do
-    case {Map.get(schema, "minLength"), Map.get(schema, "maxLength")} do
-      {min, max} when is_integer(min) and is_integer(max) and min > max ->
-        ["minLength (#{min}) cannot be greater than maxLength (#{max})" | issues]
-
-      _ ->
-        issues
-    end
-  end
-
-  @spec check_array_constraints(map(), [String.t()]) :: [String.t()]
-  defp check_array_constraints(schema, issues) do
-    case {Map.get(schema, "minItems"), Map.get(schema, "maxItems")} do
-      {min, max} when is_integer(min) and is_integer(max) and min > max ->
-        ["minItems (#{min}) cannot be greater than maxItems (#{max})" | issues]
-
-      _ ->
-        issues
-    end
   end
 end

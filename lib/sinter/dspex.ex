@@ -241,7 +241,7 @@ defmodule Sinter.DSPEx do
     error_patterns
   end
 
-  @spec collect_missing_field_errors([Error.t()]) :: %{atom() => integer()}
+  @spec collect_missing_field_errors([Error.t()]) :: %{String.t() => integer()}
   defp collect_missing_field_errors(errors) do
     errors
     |> Enum.filter(&(&1.code == :required))
@@ -250,7 +250,7 @@ defmodule Sinter.DSPEx do
     |> Enum.frequencies()
   end
 
-  @spec collect_type_mismatch_errors([Error.t()]) :: %{atom() => integer()}
+  @spec collect_type_mismatch_errors([Error.t()]) :: %{String.t() => integer()}
   defp collect_type_mismatch_errors(errors) do
     errors
     |> Enum.filter(&(&1.code == :type))
@@ -259,7 +259,7 @@ defmodule Sinter.DSPEx do
     |> Enum.frequencies()
   end
 
-  @spec collect_constraint_violation_errors([Error.t()]) :: %{atom() => integer()}
+  @spec collect_constraint_violation_errors([Error.t()]) :: %{String.t() => integer()}
   defp collect_constraint_violation_errors(errors) do
     constraint_codes = [:min_length, :max_length, :gt, :lt, :gteq, :lteq, :format, :choices]
 
@@ -270,7 +270,7 @@ defmodule Sinter.DSPEx do
     |> Enum.frequencies()
   end
 
-  @spec find_common_extra_fields([map()], Schema.t()) :: [atom()]
+  @spec find_common_extra_fields([map()], Schema.t()) :: [String.t()]
   defp find_common_extra_fields(examples, schema) do
     schema_fields = Schema.fields(schema) |> Map.keys() |> MapSet.new()
 
@@ -278,7 +278,7 @@ defmodule Sinter.DSPEx do
     extra_fields =
       examples
       |> Enum.flat_map(&Map.keys/1)
-      |> Enum.map(fn key -> if is_binary(key), do: String.to_atom(key), else: key end)
+      |> Enum.map(&normalize_key/1)
       |> Enum.reject(&(&1 in schema_fields))
       |> Enum.frequencies()
       # Appear in 30%+ of examples
@@ -287,6 +287,10 @@ defmodule Sinter.DSPEx do
 
     extra_fields
   end
+
+  defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp normalize_key(key) when is_binary(key), do: key
+  defp normalize_key(key), do: to_string(key)
 
   @spec generate_optimization_suggestions(map()) :: [String.t()]
   defp generate_optimization_suggestions(patterns) do
@@ -382,7 +386,13 @@ defmodule Sinter.DSPEx do
     opts = [required: field_def.required]
     opts = if field_def.description, do: [description: field_def.description] ++ opts, else: opts
     opts = if field_def.example, do: [example: field_def.example] ++ opts, else: opts
-    opts = if field_def.default, do: [default: field_def.default] ++ opts, else: opts
+
+    opts =
+      case field_def.default do
+        nil -> opts
+        default -> [default: default] ++ opts
+      end
+
     field_def.constraints ++ opts
   end
 
@@ -426,7 +436,7 @@ defmodule Sinter.DSPEx do
     end)
   end
 
-  @spec add_commonly_missing_fields([tuple()], [atom()]) :: [tuple()]
+  @spec add_commonly_missing_fields([tuple()], [String.t()]) :: [tuple()]
   defp add_commonly_missing_fields(field_specs, common_extra_fields) do
     # Add extra fields as optional :any type
     extra_field_specs =

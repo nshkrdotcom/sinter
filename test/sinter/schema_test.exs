@@ -83,8 +83,8 @@ defmodule Sinter.SchemaTest do
       assert {:ok, result} = Validator.validate(schema, data)
 
       # Defaults should be applied
-      assert result[:active] == true
-      assert result[:count] == 0
+      assert result["active"] == true
+      assert result["count"] == 0
     end
 
     test "accepts schema configuration options" do
@@ -106,7 +106,7 @@ defmodule Sinter.SchemaTest do
 
     test "accepts post-validation function" do
       post_validate_fn = fn data ->
-        if Map.get(data, :name) == "invalid" do
+        if Map.get(data, "name") == "invalid" do
           {:error, "Invalid name"}
         else
           {:ok, data}
@@ -120,10 +120,10 @@ defmodule Sinter.SchemaTest do
       schema = Schema.define(fields, post_validate: post_validate_fn)
 
       # Valid case
-      assert {:ok, _} = Validator.validate(schema, %{name: "valid"})
+      assert {:ok, _} = Validator.validate(schema, %{"name" => "valid"})
 
       # Invalid case (caught by post-validation)
-      assert {:error, _} = Validator.validate(schema, %{name: "invalid"})
+      assert {:error, _} = Validator.validate(schema, %{"name" => "invalid"})
     end
 
     test "normalizes field specifications" do
@@ -143,10 +143,11 @@ defmodule Sinter.SchemaTest do
 
     test "handles complex nested field structures" do
       fields = [
-        {:user, :map,
-         [
-           required: true
-         ]}
+        {:user,
+         {:object,
+          [
+            {:name, :string, [required: true]}
+          ]}, [required: true]}
       ]
 
       schema = Schema.define(fields)
@@ -160,6 +161,24 @@ defmodule Sinter.SchemaTest do
       assert {:ok, _} = Validator.validate(schema, valid_data)
     end
 
+    test "supports object helper for nested schemas" do
+      address_schema =
+        Schema.object([
+          {:street, :string, [required: true]},
+          {:zip, :string, [required: true]}
+        ])
+
+      schema =
+        Schema.define([
+          {:address, address_schema, [required: true]}
+        ])
+
+      valid_data = %{"address" => %{"street" => "Main", "zip" => "12345"}}
+
+      assert {:ok, validated} = Validator.validate(schema, valid_data)
+      assert validated["address"]["street"] == "Main"
+    end
+
     test "raises on invalid field specifications" do
       assert_raise ArgumentError, fn ->
         Schema.define([
@@ -169,9 +188,17 @@ defmodule Sinter.SchemaTest do
     end
 
     test "raises on malformed constraints" do
-      assert_raise ArgumentError, fn ->
+      assert_raise NimbleOptions.ValidationError, fn ->
         Schema.define([
           {:field, :string, [invalid_constraint: "bad"]}
+        ])
+      end
+    end
+
+    test "raises on invalid constraint values" do
+      assert_raise NimbleOptions.ValidationError, fn ->
+        Schema.define([
+          {:field, :string, [min_length: "10"]}
         ])
       end
     end
@@ -233,7 +260,7 @@ defmodule Sinter.SchemaTest do
       data = %{"field1" => "test", "field2" => 5}
       assert {:ok, result} = Validator.validate(schema, data)
       # default applied
-      assert result[:field3] == false
+      assert result["field3"] == false
     end
 
     test "generates schema/0 function" do
@@ -264,6 +291,7 @@ defmodule Sinter.SchemaTest do
           field :user_data, :map, required: true
           field :choice, :atom, required: true, choices: [:a, :b, :c]
           field :coordinates, {:tuple, [:float, :float]}, optional: true
+          field :profile, {:object, [{:nickname, :string, [optional: true]}]}, optional: true
         end
       end
 
@@ -274,7 +302,8 @@ defmodule Sinter.SchemaTest do
         "number_list" => [1, 2, 3],
         "user_data" => %{"key" => "value"},
         "choice" => :a,
-        "coordinates" => {1.0, 2.0}
+        "coordinates" => {1.0, 2.0},
+        "profile" => %{"nickname" => "Ace"}
       }
 
       assert {:ok, _} = Validator.validate(schema, valid_data)
@@ -312,8 +341,8 @@ defmodule Sinter.SchemaTest do
       fields = Schema.fields(schema)
 
       assert is_map(fields)
-      assert Map.has_key?(fields, :name)
-      assert Map.has_key?(fields, :age)
+      assert Map.has_key?(fields, "name")
+      assert Map.has_key?(fields, "age")
     end
 
     test "required_fields/1 returns only required fields" do
@@ -327,10 +356,10 @@ defmodule Sinter.SchemaTest do
       schema = Schema.define(fields)
       required = Schema.required_fields(schema)
 
-      assert :required1 in required
-      assert :required2 in required
-      refute :optional1 in required
-      refute :optional2 in required
+      assert "required1" in required
+      assert "required2" in required
+      refute "optional1" in required
+      refute "optional2" in required
     end
 
     test "optional_fields/1 returns only optional fields" do
@@ -344,10 +373,10 @@ defmodule Sinter.SchemaTest do
       schema = Schema.define(fields)
       optional = Schema.optional_fields(schema)
 
-      assert :optional1 in optional
-      assert :optional2 in optional
-      refute :required1 in optional
-      refute :required2 in optional
+      assert "optional1" in optional
+      assert "optional2" in optional
+      refute "required1" in optional
+      refute "required2" in optional
     end
 
     test "strict?/1 returns correct strict setting" do
@@ -391,9 +420,9 @@ defmodule Sinter.SchemaTest do
       assert info.required_count == 1
       assert info.optional_count == 2
       assert is_list(info.field_names)
-      assert :name in info.field_names
-      assert :age in info.field_names
-      assert :tags in info.field_names
+      assert "name" in info.field_names
+      assert "age" in info.field_names
+      assert "tags" in info.field_names
     end
 
     test "info/1 handles schema without metadata" do
@@ -486,7 +515,7 @@ defmodule Sinter.SchemaTest do
 
     test "schema with post-validation hook" do
       post_validate_fn = fn data ->
-        if Map.get(data, :password) == Map.get(data, :password_confirmation) do
+        if Map.get(data, "password") == Map.get(data, "password_confirmation") do
           {:ok, data}
         else
           {:error, "Passwords do not match"}
@@ -530,9 +559,9 @@ defmodule Sinter.SchemaTest do
       types = Schema.field_types(schema)
 
       assert types == %{
-               name: :string,
-               age: :integer,
-               tags: {:array, :string}
+               "name" => :string,
+               "age" => :integer,
+               "tags" => {:array, :string}
              }
     end
 
@@ -546,9 +575,9 @@ defmodule Sinter.SchemaTest do
 
       types = Schema.field_types(schema)
 
-      assert types[:coords] == {:tuple, [:float, :float]}
-      assert types[:metadata] == {:map, :string, :any}
-      assert types[:status] == {:union, [:string, :integer]}
+      assert types["coords"] == {:tuple, [:float, :float]}
+      assert types["metadata"] == {:map, :string, :any}
+      assert types["status"] == {:union, [:string, :integer]}
     end
   end
 
@@ -563,9 +592,10 @@ defmodule Sinter.SchemaTest do
 
       constraints = Schema.constraints(schema)
 
-      assert constraints[:name] == [min_length: 2, max_length: 50]
-      assert constraints[:score] == [gt: 0, lteq: 100]
-      assert constraints[:email] == [format: ~r/@/]
+      assert constraints["name"] == [min_length: 2, max_length: 50]
+      assert constraints["score"] == [gt: 0, lteq: 100]
+      email_format = Keyword.fetch!(constraints["email"], :format)
+      assert Regex.source(email_format) == "@"
     end
 
     test "returns empty list for fields without constraints" do
@@ -575,7 +605,7 @@ defmodule Sinter.SchemaTest do
         ])
 
       constraints = Schema.constraints(schema)
-      assert constraints[:simple] == []
+      assert constraints["simple"] == []
     end
 
     test "handles choice constraints" do
@@ -585,7 +615,7 @@ defmodule Sinter.SchemaTest do
         ])
 
       constraints = Schema.constraints(schema)
-      assert constraints[:status] == [choices: ["active", "inactive"]]
+      assert constraints["status"] == [choices: ["active", "inactive"]]
     end
   end
 end

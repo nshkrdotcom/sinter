@@ -6,9 +6,12 @@
 IO.puts("=== Sinter JSON Schema Generation Examples ===")
 IO.puts("")
 
-# Add the compiled beam files to the path
-Code.append_path("../_build/dev/lib/sinter/ebin")
-Code.append_path("../_build/dev/lib/jason/ebin")
+# Add the compiled beam files to the path (app + deps)
+"../_build/dev/lib"
+|> Path.expand(__DIR__)
+|> Path.join("*/ebin")
+|> Path.wildcard()
+|> Enum.each(&Code.append_path/1)
 
 # ============================================================================
 # 1. BASIC JSON SCHEMA GENERATION
@@ -18,13 +21,18 @@ IO.puts("1. Basic JSON Schema Generation")
 IO.puts("-------------------------------")
 
 # Simple schema for basic JSON Schema generation
-user_schema = Sinter.Schema.define([
-  {:name, :string, [required: true, min_length: 2, max_length: 50]},
-  {:age, :integer, [required: true, gteq: 0, lteq: 120]},
-  {:email, :string, [required: true, format: ~r/^[^\s]+@[^\s]+\.[^\s]+$/]},
-  {:active, :boolean, [optional: true, default: true]},
-  {:tags, {:array, :string}, [optional: true, min_length: 0, max_length: 10]}
-], title: "User Schema", description: "Schema for user data validation")
+user_schema =
+  Sinter.Schema.define(
+    [
+      {:name, :string, [required: true, min_length: 2, max_length: 50]},
+      {:age, :integer, [required: true, gteq: 0, lteq: 120]},
+      {:email, :string, [required: true, format: ~r/^[^\s]+@[^\s]+\.[^\s]+$/]},
+      {:active, :boolean, [optional: true, default: true]},
+      {:tags, {:array, :string}, [optional: true, min_items: 0, max_items: 10]}
+    ],
+    title: "User Schema",
+    description: "Schema for user data validation"
+  )
 
 # Generate standard JSON Schema
 json_schema = Sinter.JsonSchema.generate(user_schema)
@@ -53,7 +61,7 @@ IO.puts("----------------------------------")
 openai_schema = Sinter.JsonSchema.for_provider(user_schema, :openai)
 IO.puts("✓ OpenAI-optimized schema:")
 IO.puts("  Additional properties: #{openai_schema["additionalProperties"]}")
-IO.puts("  Schema version: #{openai_schema["$schema"] || "Draft 4 (implied)"}")
+IO.puts("  Schema version: #{openai_schema["$schema"]}")
 
 # Anthropic optimization (for tool use)
 anthropic_schema = Sinter.JsonSchema.for_provider(user_schema, :anthropic)
@@ -76,25 +84,32 @@ IO.puts("3. Complex Type Mappings")
 IO.puts("-----------------------")
 
 # Schema with complex types
-complex_schema = Sinter.Schema.define([
-  {:id, {:union, [:string, :integer]}, [required: true]},
-  {:metadata, :map, [optional: true]},
-  {:coordinates, {:array, :float}, [required: true, min_length: 2, max_length: 3]},
-  {:nested_data, :map, [optional: true]},
-  {:any_value, :any, [optional: true]},
-  {:category, :string, [required: true, choices: ["A", "B", "C"]]}
-], title: "Complex Types Schema")
+complex_schema =
+  Sinter.Schema.define(
+    [
+      {:id, {:union, [:string, :integer]}, [required: true]},
+      {:metadata, :map, [optional: true]},
+      {:coordinates, {:array, :float}, [required: true, min_items: 2, max_items: 3]},
+      {:nested_data, :map, [optional: true]},
+      {:any_value, :any, [optional: true]},
+      {:category, :string, [required: true, choices: ["A", "B", "C"]]}
+    ],
+    title: "Complex Types Schema"
+  )
 
 complex_json = Sinter.JsonSchema.generate(complex_schema)
 
 IO.puts("✓ Complex types mapped to JSON Schema:")
+
 Enum.each(complex_json["properties"], fn {field, props} ->
-  type_info = case props do
-    %{"type" => type} -> type
-    %{"oneOf" => _} -> "union"
-    %{"anyOf" => _} -> "anyOf"
-    _ -> "complex"
-  end
+  type_info =
+    case props do
+      %{"type" => type} -> type
+      %{"oneOf" => _} -> "union"
+      %{"anyOf" => _} -> "anyOf"
+      _ -> "complex"
+    end
+
   IO.puts("  #{field}: #{type_info}")
 end)
 
@@ -112,14 +127,15 @@ IO.puts("4. Constraint Mapping")
 IO.puts("--------------------")
 
 # Schema focused on constraints
-constraint_schema = Sinter.Schema.define([
-  {:username, :string, [required: true, min_length: 3, max_length: 20,
-                       format: ~r/^[a-zA-Z0-9_]+$/]},
-  {:score, :integer, [required: true, gteq: 0, lteq: 100]},
-  {:rating, :float, [required: true, gt: 0.0, lt: 5.0]},
-  {:description, :string, [optional: true, max_length: 500]},
-  {:items, {:array, :string}, [required: true, min_length: 1, max_length: 20]}
-])
+constraint_schema =
+  Sinter.Schema.define([
+    {:username, :string,
+     [required: true, min_length: 3, max_length: 20, format: ~r/^[a-zA-Z0-9_]+$/]},
+    {:score, :integer, [required: true, gteq: 0, lteq: 100]},
+    {:rating, :float, [required: true, gt: 0.0, lt: 5.0]},
+    {:description, :string, [optional: true, max_length: 500]},
+    {:items, {:array, :string}, [required: true, min_items: 1, max_items: 20]}
+  ])
 
 constraint_json = Sinter.JsonSchema.generate(constraint_schema)
 
@@ -156,17 +172,22 @@ IO.puts("5. Real-World API Schemas")
 IO.puts("------------------------")
 
 # E-commerce API schema
-product_api_schema = Sinter.Schema.define([
-  {:sku, :string, [required: true, format: ~r/^[A-Z0-9-]+$/]},
-  {:name, :string, [required: true, min_length: 1, max_length: 200]},
-  {:description, :string, [optional: true, max_length: 2000]},
-  {:price, :float, [required: true, gt: 0.0]},
-  {:currency, :string, [required: true, choices: ["USD", "EUR", "GBP"]]},
-  {:categories, {:array, :string}, [required: true, min_length: 1]},
-  {:attributes, :map, [optional: true]},
-  {:in_stock, :boolean, [required: true]},
-  {:stock_quantity, :integer, [optional: true, gteq: 0]}
-], title: "Product API", description: "Schema for e-commerce product API")
+product_api_schema =
+  Sinter.Schema.define(
+    [
+      {:sku, :string, [required: true, format: ~r/^[A-Z0-9-]+$/]},
+      {:name, :string, [required: true, min_length: 1, max_length: 200]},
+      {:description, :string, [optional: true, max_length: 2000]},
+      {:price, :float, [required: true, gt: 0.0]},
+      {:currency, :string, [required: true, choices: ["USD", "EUR", "GBP"]]},
+      {:categories, {:array, :string}, [required: true, min_items: 1]},
+      {:attributes, :map, [optional: true]},
+      {:in_stock, :boolean, [required: true]},
+      {:stock_quantity, :integer, [optional: true, gteq: 0]}
+    ],
+    title: "Product API",
+    description: "Schema for e-commerce product API"
+  )
 
 # Generate for different providers
 product_openai = Sinter.JsonSchema.for_provider(product_api_schema, :openai)
@@ -177,16 +198,21 @@ IO.puts("  Fields: #{map_size(product_openai["properties"])}")
 IO.puts("  Required: #{length(product_openai["required"])}")
 
 # User registration API schema
-registration_schema = Sinter.Schema.define([
-  {:email, :string, [required: true, format: ~r/^[^\s]+@[^\s]+\.[^\s]+$/]},
-  {:password, :string, [required: true, min_length: 8, max_length: 128]},
-  {:confirm_password, :string, [required: true]},
-  {:first_name, :string, [required: true, min_length: 1, max_length: 50]},
-  {:last_name, :string, [required: true, min_length: 1, max_length: 50]},
-  {:phone, :string, [optional: true, format: ~r/^\+?[\d\s\-\(\)]+$/]},
-  {:terms_accepted, :boolean, [required: true]},
-  {:marketing_opt_in, :boolean, [optional: true, default: false]}
-], title: "User Registration", strict: true)
+registration_schema =
+  Sinter.Schema.define(
+    [
+      {:email, :string, [required: true, format: ~r/^[^\s]+@[^\s]+\.[^\s]+$/]},
+      {:password, :string, [required: true, min_length: 8, max_length: 128]},
+      {:confirm_password, :string, [required: true]},
+      {:first_name, :string, [required: true, min_length: 1, max_length: 50]},
+      {:last_name, :string, [required: true, min_length: 1, max_length: 50]},
+      {:phone, :string, [optional: true, format: ~r/^\+?[\d\s\-\(\)]+$/]},
+      {:terms_accepted, :boolean, [required: true]},
+      {:marketing_opt_in, :boolean, [optional: true, default: false]}
+    ],
+    title: "User Registration",
+    strict: true
+  )
 
 registration_json = Sinter.JsonSchema.generate(registration_schema)
 IO.puts("✓ User registration schema generated")
@@ -201,17 +227,45 @@ IO.puts("6. Nested and Hierarchical Schemas")
 IO.puts("----------------------------------")
 
 # Order with nested items schema
-order_schema = Sinter.Schema.define([
-  {:order_id, :string, [required: true]},
-  {:customer, :map, [required: true]},  # Will be nested
-  {:items, {:array, :map}, [required: true, min_length: 1]},  # Array of objects
-  {:shipping_address, :map, [required: true]},
-  {:billing_address, :map, [optional: true]},
-  {:payment_method, :string, [required: true, choices: ["credit_card", "paypal", "bank_transfer"]]},
-  {:total_amount, :float, [required: true, gt: 0.0]},
-  {:currency, :string, [required: true, choices: ["USD", "EUR", "GBP"]]},
-  {:status, :string, [required: true, choices: ["pending", "confirmed", "shipped", "delivered", "cancelled"]]}
-], title: "Order Schema", description: "Complete order with nested customer and items")
+customer_schema =
+  Sinter.Schema.object([
+    {:customer_id, :string, [required: true]},
+    {:name, :string, [required: true]},
+    {:email, :string, [required: true, format: ~r/@/]}
+  ])
+
+address_schema =
+  Sinter.Schema.object([
+    {:street, :string, [required: true]},
+    {:city, :string, [required: true]},
+    {:postal_code, :string, [required: true]}
+  ])
+
+item_schema =
+  Sinter.Schema.object([
+    {:sku, :string, [required: true]},
+    {:quantity, :integer, [required: true, gteq: 1]},
+    {:price, :float, [required: true, gt: 0.0]}
+  ])
+
+order_schema =
+  Sinter.Schema.define(
+    [
+      {:order_id, :string, [required: true]},
+      {:customer, customer_schema, [required: true]},
+      {:items, {:array, item_schema}, [required: true, min_items: 1]},
+      {:shipping_address, address_schema, [required: true]},
+      {:billing_address, address_schema, [optional: true]},
+      {:payment_method, :string,
+       [required: true, choices: ["credit_card", "paypal", "bank_transfer"]]},
+      {:total_amount, :float, [required: true, gt: 0.0]},
+      {:currency, :string, [required: true, choices: ["USD", "EUR", "GBP"]]},
+      {:status, :string,
+       [required: true, choices: ["pending", "confirmed", "shipped", "delivered", "cancelled"]]}
+    ],
+    title: "Order Schema",
+    description: "Complete order with nested customer and items"
+  )
 
 order_json = Sinter.JsonSchema.generate(order_schema)
 
@@ -245,13 +299,16 @@ Enum.each(schemas_to_validate, fn {name, schema} ->
   case Sinter.JsonSchema.validate_schema(schema) do
     :ok ->
       IO.puts("✓ #{name}: Valid JSON Schema")
+
     {:error, issues} ->
       IO.puts("✗ #{name}: Issues found:")
+
       Enum.each(issues, fn issue ->
         IO.puts("    - #{issue}")
       end)
   end
 end)
+
 IO.puts("")
 
 # ============================================================================
@@ -262,11 +319,16 @@ IO.puts("8. Generation Options and Customization")
 IO.puts("--------------------------------------")
 
 # Test different generation options
-base_schema = Sinter.Schema.define([
-  {:name, :string, [required: true, description: "User's full name"]},
-  {:age, :integer, [optional: true, description: "User's age in years"]},
-  {:email, :string, [required: true, description: "User's email address"]}
-], title: "Customization Test Schema", description: "Testing various generation options")
+base_schema =
+  Sinter.Schema.define(
+    [
+      {:name, :string, [required: true, description: "User's full name"]},
+      {:age, :integer, [optional: true, description: "User's age in years"]},
+      {:email, :string, [required: true, description: "User's email address"]}
+    ],
+    title: "Customization Test Schema",
+    description: "Testing various generation options"
+  )
 
 # With descriptions
 with_descriptions = Sinter.JsonSchema.generate(base_schema, include_descriptions: true)
@@ -297,25 +359,30 @@ IO.puts("9. Performance Comparison")
 IO.puts("------------------------")
 
 # Test generation performance
-large_schema = Sinter.Schema.define(
-  Enum.map(1..50, fn i ->
-    {String.to_atom("field_#{i}"), :string, [required: rem(i, 3) == 0, min_length: 1]}
-  end),
-  title: "Large Schema Test"
-)
+large_schema =
+  Sinter.Schema.define(
+    Enum.map(1..50, fn i ->
+      {"field_#{i}", :string, [required: rem(i, 3) == 0, min_length: 1]}
+    end),
+    title: "Large Schema Test"
+  )
 
 # Time standard generation
 start_time = System.monotonic_time(:microsecond)
+
 for _ <- 1..100 do
   Sinter.JsonSchema.generate(large_schema)
 end
+
 standard_time = System.monotonic_time(:microsecond) - start_time
 
 # Time OpenAI generation
 start_time = System.monotonic_time(:microsecond)
+
 for _ <- 1..100 do
   Sinter.JsonSchema.for_provider(large_schema, :openai)
 end
+
 openai_time = System.monotonic_time(:microsecond) - start_time
 
 IO.puts("✓ Performance test (100 iterations, #{map_size(large_schema.fields)} fields):")

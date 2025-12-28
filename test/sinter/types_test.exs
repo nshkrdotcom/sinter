@@ -79,6 +79,35 @@ defmodule Sinter.TypesTest do
       assert_error_with_code(errors, :type)
     end
 
+    test "validates built-in format types" do
+      assert {:ok, "2024-01-01"} = Types.validate(:date, "2024-01-01", [])
+      assert {:ok, "2024-01-01T12:30:00Z"} = Types.validate(:datetime, "2024-01-01T12:30:00Z", [])
+
+      assert {:ok, "550e8400-e29b-41d4-a716-446655440000"} =
+               Types.validate(:uuid, "550e8400-e29b-41d4-a716-446655440000", [])
+
+      errors = assert_invalid(Types.validate(:date, "invalid", []))
+      assert_error_with_code(errors, :format)
+
+      errors = assert_invalid(Types.validate(:datetime, "2024-01-01", []))
+      assert_error_with_code(errors, :format)
+
+      errors = assert_invalid(Types.validate(:uuid, "not-a-uuid", []))
+      assert_error_with_code(errors, :format)
+    end
+
+    test "validates null and nullable types" do
+      assert {:ok, nil} = Types.validate(:null, nil, [])
+      assert {:ok, nil} = Types.validate({:nullable, :string}, nil, [])
+      assert {:ok, "hello"} = Types.validate({:nullable, :string}, "hello", [])
+
+      errors = assert_invalid(Types.validate(:null, "nope", []))
+      assert_error_with_code(errors, :type)
+
+      errors = assert_invalid(Types.validate({:nullable, :integer}, "nope", []))
+      assert_error_with_code(errors, :type)
+    end
+
     test "validates any type (accepts everything)" do
       assert {:ok, "string"} = Types.validate(:any, "string", [])
       assert {:ok, 42} = Types.validate(:any, 42, [])
@@ -217,6 +246,22 @@ defmodule Sinter.TypesTest do
     end
   end
 
+  describe "validate/3 - object schema types" do
+    test "validates nested object schemas" do
+      type =
+        {:object,
+         [
+           {:name, :string, [required: true]},
+           {:age, :integer, [optional: true]}
+         ]}
+
+      assert {:ok, %{"name" => "Alice"}} = Types.validate(type, %{"name" => "Alice"}, [])
+
+      errors = assert_invalid(Types.validate(type, %{"age" => 30}, []))
+      assert_error_with_code(errors, :required)
+    end
+  end
+
   describe "coerce/2" do
     test "coerces string from various types" do
       assert {:ok, "hello"} = Types.coerce(:string, :hello)
@@ -323,6 +368,10 @@ defmodule Sinter.TypesTest do
       assert %{"type" => "integer"} = Types.to_json_schema(:integer)
       assert %{"type" => "number"} = Types.to_json_schema(:float)
       assert %{"type" => "boolean"} = Types.to_json_schema(:boolean)
+      assert %{"type" => "null"} = Types.to_json_schema(:null)
+      assert %{"type" => "string", "format" => "date"} = Types.to_json_schema(:date)
+      assert %{"type" => "string", "format" => "date-time"} = Types.to_json_schema(:datetime)
+      assert %{"type" => "string", "format" => "uuid"} = Types.to_json_schema(:uuid)
       # any type has no restrictions
       assert %{} = Types.to_json_schema(:any)
     end
@@ -397,6 +446,15 @@ defmodule Sinter.TypesTest do
       assert schema["oneOf"] == [
                %{"type" => "string"},
                %{"type" => "array", "items" => %{"type" => "integer"}}
+             ]
+    end
+
+    test "converts nullable types to JSON Schema" do
+      schema = Types.to_json_schema({:nullable, :string})
+
+      assert schema["anyOf"] == [
+               %{"type" => "string"},
+               %{"type" => "null"}
              ]
     end
   end

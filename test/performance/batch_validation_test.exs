@@ -98,10 +98,10 @@ defmodule Sinter.Performance.BatchValidationTest do
       assert time_microseconds < 500_000
 
       fields = Schema.fields(schema)
-      assert Map.has_key?(fields, :id)
-      assert Map.has_key?(fields, :score)
-      assert Map.has_key?(fields, :active)
-      assert Map.has_key?(fields, :tags)
+      assert Map.has_key?(fields, "id")
+      assert Map.has_key?(fields, "score")
+      assert Map.has_key?(fields, "active")
+      assert Map.has_key?(fields, "tags")
 
       IO.puts("Inferred schema from 1,000 examples in #{time_microseconds / 1000}ms")
     end

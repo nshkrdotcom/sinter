@@ -51,6 +51,7 @@ defmodule Sinter.Schema do
   * `:post_validate` - Custom validation function
   """
 
+  alias NimbleOptions
   alias Sinter.Types
 
   @doc false
@@ -60,10 +61,10 @@ defmodule Sinter.Schema do
     end
   end
 
-  @type field_spec :: {atom(), Types.type_spec(), keyword()}
+  @type field_spec :: {atom() | String.t(), Types.type_spec(), keyword()}
 
   @type field_definition :: %{
-          name: atom(),
+          name: String.t(),
           type: Types.type_spec(),
           required: boolean(),
           constraints: keyword(),
@@ -89,11 +90,31 @@ defmodule Sinter.Schema do
   defstruct [:fields, :config, :metadata, :definition]
 
   @type t :: %__MODULE__{
-          fields: %{atom() => field_definition()},
+          fields: %{String.t() => field_definition()},
           config: config(),
           metadata: metadata(),
           definition: map()
         }
+
+  @field_opts_schema NimbleOptions.new!(
+                       required: [type: :boolean],
+                       optional: [type: :boolean],
+                       default: [type: :any],
+                       description: [type: :string],
+                       example: [type: :any],
+                       min_length: [type: :non_neg_integer],
+                       max_length: [type: :non_neg_integer],
+                       min_items: [type: :non_neg_integer],
+                       max_items: [type: :non_neg_integer],
+                       gt: [type: {:or, [:integer, :float]}],
+                       gteq: [type: {:or, [:integer, :float]}],
+                       lt: [type: {:or, [:integer, :float]}],
+                       lteq: [type: {:or, [:integer, :float]}],
+                       format: [type: :any],
+                       choices: [type: {:list, :any}],
+                       # DSPEx metadata for field classification
+                       dspex_field_type: [type: :atom]
+                     )
 
   @doc """
   Defines a schema from field specifications.
@@ -248,7 +269,7 @@ defmodule Sinter.Schema do
       iex> fields[:name].required
       true
   """
-  @spec fields(t()) :: %{atom() => field_definition()}
+  @spec fields(t()) :: %{String.t() => field_definition()}
   def fields(%__MODULE__{fields: fields}), do: fields
 
   @doc """
@@ -276,7 +297,7 @@ defmodule Sinter.Schema do
       iex> Sinter.Schema.required_fields(schema)
       [:name]
   """
-  @spec required_fields(t()) :: [atom()]
+  @spec required_fields(t()) :: [String.t()]
   def required_fields(%__MODULE__{fields: fields}) do
     fields
     |> Enum.filter(fn {_name, field} -> field.required end)
@@ -295,7 +316,7 @@ defmodule Sinter.Schema do
       iex> Sinter.Schema.optional_fields(schema)
       [:age]
   """
-  @spec optional_fields(t()) :: [atom()]
+  @spec optional_fields(t()) :: [String.t()]
   def optional_fields(%__MODULE__{fields: fields}) do
     fields
     |> Enum.reject(fn {_name, field} -> field.required end)
@@ -360,15 +381,17 @@ defmodule Sinter.Schema do
   # Private helper functions
 
   @spec validate_field_spec(field_spec()) :: field_spec()
-  defp validate_field_spec({name, type_spec, opts} = field_spec)
-       when is_atom(name) and is_list(opts) do
+  defp validate_field_spec({name, type_spec, opts})
+       when (is_atom(name) or is_binary(name)) and is_list(opts) do
+    normalized_name = normalize_field_name(name)
+
     # Validate that the type specification is supported
     _ = validate_type_spec(type_spec)
 
     # Validate options
-    _ = validate_field_options(opts)
+    validated_opts = validate_field_options(opts)
 
-    field_spec
+    {normalized_name, type_spec, validated_opts}
   end
 
   defp validate_field_spec(invalid) do
@@ -377,7 +400,7 @@ defmodule Sinter.Schema do
 
     Expected: {name, type_spec, options}
     Where:
-      - name is an atom
+      - name is an atom or string
       - type_spec is a valid type specification
       - options is a keyword list
     """
@@ -385,7 +408,19 @@ defmodule Sinter.Schema do
 
   @spec validate_type_spec(Types.type_spec()) :: :ok
   defp validate_type_spec(type_spec)
-       when type_spec in [:string, :integer, :float, :boolean, :atom, :any, :map],
+       when type_spec in [
+              :string,
+              :integer,
+              :float,
+              :boolean,
+              :atom,
+              :any,
+              :map,
+              :date,
+              :datetime,
+              :uuid,
+              :null
+            ],
        do: :ok
 
   defp validate_type_spec({:array, inner_type}), do: validate_type_spec(inner_type)
@@ -404,44 +439,29 @@ defmodule Sinter.Schema do
     validate_type_spec(value_type)
   end
 
+  defp validate_type_spec({:nullable, inner_type}), do: validate_type_spec(inner_type)
+
+  defp validate_type_spec({:object, %__MODULE__{}}), do: :ok
+
+  defp validate_type_spec({:object, field_specs}) when is_list(field_specs) do
+    Enum.each(field_specs, &validate_field_spec/1)
+    :ok
+  end
+
   defp validate_type_spec(invalid) do
     raise ArgumentError, "Invalid type specification: #{inspect(invalid)}"
   end
 
-  @spec validate_field_options(keyword()) :: :ok
+  @spec validate_field_options(keyword()) :: keyword()
   defp validate_field_options(opts) do
-    valid_keys = [
-      :required,
-      :optional,
-      :default,
-      :description,
-      :example,
-      :min_length,
-      :max_length,
-      :min_items,
-      :max_items,
-      :gt,
-      :gteq,
-      :lt,
-      :lteq,
-      :format,
-      :choices,
-      # DSPEx metadata for field classification
-      :dspex_field_type
-    ]
-
-    invalid_keys = Keyword.keys(opts) -- valid_keys
-
-    if invalid_keys != [] do
-      raise ArgumentError, "Invalid field options: #{inspect(invalid_keys)}"
-    end
+    validated_opts = NimbleOptions.validate!(opts, @field_opts_schema)
 
     # Validate mutual exclusivity
-    if Keyword.has_key?(opts, :required) and Keyword.has_key?(opts, :optional) do
+    if Keyword.has_key?(validated_opts, :required) and Keyword.has_key?(validated_opts, :optional) do
       raise ArgumentError, "Cannot specify both :required and :optional"
     end
 
-    :ok
+    validated_opts
   end
 
   @spec normalize_field_spec(field_spec()) :: field_definition()
@@ -453,7 +473,8 @@ defmodule Sinter.Schema do
     constraints = extract_constraints(opts)
 
     # Normalize type specification with constraints if needed
-    normalized_type = normalize_type_with_constraints(type_spec, constraints)
+    normalized_type = normalize_type_spec(type_spec)
+    {normalized_type, constraints} = normalize_type_with_constraints(normalized_type, constraints)
 
     %{
       name: name,
@@ -525,18 +546,54 @@ defmodule Sinter.Schema do
     }
   end
 
-  @spec normalize_type_with_constraints(Types.type_spec(), keyword()) :: Types.type_spec()
+  @spec normalize_type_with_constraints(Types.type_spec(), keyword()) ::
+          {Types.type_spec(), keyword()}
   defp normalize_type_with_constraints({:array, inner_type}, constraints) do
     array_constraints = Keyword.take(constraints, [:min_items, :max_items])
 
-    if array_constraints == [] do
-      {:array, inner_type}
-    else
-      {:array, inner_type, array_constraints}
-    end
+    type_spec =
+      if array_constraints == [] do
+        {:array, inner_type}
+      else
+        {:array, inner_type, array_constraints}
+      end
+
+    {type_spec, Keyword.drop(constraints, [:min_items, :max_items])}
   end
 
-  defp normalize_type_with_constraints(type_spec, _constraints), do: type_spec
+  defp normalize_type_with_constraints({:array, inner_type, existing}, constraints) do
+    array_constraints = Keyword.take(constraints, [:min_items, :max_items])
+    merged = Keyword.merge(existing, array_constraints)
+    {{:array, inner_type, merged}, Keyword.drop(constraints, [:min_items, :max_items])}
+  end
+
+  defp normalize_type_with_constraints(type_spec, constraints), do: {type_spec, constraints}
+
+  @spec normalize_type_spec(Types.type_spec()) :: Types.type_spec()
+  defp normalize_type_spec({:array, inner_type}),
+    do: {:array, normalize_type_spec(inner_type)}
+
+  defp normalize_type_spec({:array, inner_type, constraints}),
+    do: {:array, normalize_type_spec(inner_type), constraints}
+
+  defp normalize_type_spec({:union, types}),
+    do: {:union, Enum.map(types, &normalize_type_spec/1)}
+
+  defp normalize_type_spec({:tuple, types}),
+    do: {:tuple, Enum.map(types, &normalize_type_spec/1)}
+
+  defp normalize_type_spec({:map, key_type, value_type}),
+    do: {:map, normalize_type_spec(key_type), normalize_type_spec(value_type)}
+
+  defp normalize_type_spec({:nullable, inner_type}),
+    do: {:nullable, normalize_type_spec(inner_type)}
+
+  defp normalize_type_spec({:object, %__MODULE__{} = schema}), do: {:object, schema}
+
+  defp normalize_type_spec({:object, field_specs}) when is_list(field_specs),
+    do: {:object, define(field_specs)}
+
+  defp normalize_type_spec(type_spec), do: type_spec
 
   @doc """
   Extracts field types from a schema for analysis and introspection.
@@ -564,7 +621,7 @@ defmodule Sinter.Schema do
         tags: {:array, :string}
       }
   """
-  @spec field_types(t()) :: %{atom() => Sinter.Types.type_spec()}
+  @spec field_types(t()) :: %{String.t() => Sinter.Types.type_spec()}
   def field_types(%__MODULE__{fields: fields}) do
     Map.new(fields, fn {name, field_def} ->
       {name, field_def.type}
@@ -597,12 +654,33 @@ defmodule Sinter.Schema do
         score: [gt: 0, lteq: 100]
       }
   """
-  @spec constraints(t()) :: %{atom() => keyword()}
+  @spec constraints(t()) :: %{String.t() => keyword()}
   def constraints(%__MODULE__{fields: fields}) do
     Map.new(fields, fn {name, field_def} ->
       {name, field_def.constraints}
     end)
   end
+
+  @doc """
+  Builds a nested object schema type from field specifications.
+
+  ## Examples
+
+      iex> address = Sinter.Schema.object([{:street, :string, [required: true]}])
+      iex> schema = Sinter.Schema.define([{:address, address, [required: true]}])
+  """
+  @spec object([field_spec()] | t(), keyword()) :: {:object, t()}
+  def object(schema_or_fields, opts \\ [])
+
+  def object(%__MODULE__{} = schema, _opts), do: {:object, schema}
+
+  def object(field_specs, opts) when is_list(field_specs) do
+    {:object, define(field_specs, opts)}
+  end
+
+  @spec normalize_field_name(atom() | String.t()) :: String.t()
+  defp normalize_field_name(name) when is_atom(name), do: Atom.to_string(name)
+  defp normalize_field_name(name) when is_binary(name), do: name
 
   @spec get_sinter_version() :: String.t()
   defp get_sinter_version do

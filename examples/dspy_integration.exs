@@ -6,9 +6,12 @@
 IO.puts("=== Sinter DSPy Integration Examples ===")
 IO.puts("")
 
-# Add the compiled beam files to the path
-Code.append_path("../_build/dev/lib/sinter/ebin")
-Code.append_path("../_build/dev/lib/jason/ebin")
+# Add the compiled beam files to the path (app + deps)
+"../_build/dev/lib"
+|> Path.expand(__DIR__)
+|> Path.join("*/ebin")
+|> Path.wildcard()
+|> Enum.each(&Code.append_path/1)
 
 # ============================================================================
 # 1. PROGRAM SIGNATURE CREATION
@@ -18,35 +21,37 @@ IO.puts("1. DSPy Program Signatures")
 IO.puts("--------------------------")
 
 # Create a question-answering program signature
-qa_signature = Sinter.DSPEx.create_signature(
-  # Input fields
-  [
-    {:question, :string, [required: true]},
-    {:context, {:array, :string}, [optional: true]}
-  ],
-  # Output fields
-  [
-    {:answer, :string, [required: true]},
-    {:confidence, :float, [required: true, gteq: 0.0, lteq: 1.0]},
-    {:reasoning, :string, [optional: true]}
-  ],
-  title: "QA Program Signature"
-)
+qa_signature =
+  Sinter.DSPEx.create_signature(
+    # Input fields
+    [
+      {:question, :string, [required: true]},
+      {:context, {:array, :string}, [optional: true]}
+    ],
+    # Output fields
+    [
+      {:answer, :string, [required: true]},
+      {:confidence, :float, [required: true, gteq: 0.0, lteq: 1.0]},
+      {:reasoning, :string, [optional: true]}
+    ],
+    title: "QA Program Signature"
+  )
 
 IO.puts("✓ Created QA signature with #{map_size(qa_signature.fields)} fields")
 
 # Create a chain-of-thought signature
-_cot_signature = Sinter.DSPEx.create_signature(
-  [
-    {:problem, :string, [required: true]},
-    {:examples, {:array, :map}, [optional: true]}
-  ],
-  [
-    {:reasoning_steps, {:array, :string}, [required: true]},
-    {:final_answer, :string, [required: true]}
-  ],
-  title: "Chain of Thought Signature"
-)
+_cot_signature =
+  Sinter.DSPEx.create_signature(
+    [
+      {:problem, :string, [required: true]},
+      {:examples, {:array, :map}, [optional: true]}
+    ],
+    [
+      {:reasoning_steps, {:array, :string}, [required: true]},
+      {:final_answer, :string, [required: true]}
+    ],
+    title: "Chain of Thought Signature"
+  )
 
 IO.puts("✓ Created Chain-of-Thought signature")
 IO.puts("")
@@ -73,12 +78,15 @@ Please provide your answer with confidence and reasoning.
 case Sinter.DSPEx.validate_llm_output(qa_signature, llm_output, original_prompt) do
   {:ok, validated} ->
     IO.puts("✓ LLM output validated successfully")
-    IO.puts("  Answer: #{validated.answer}")
-    IO.puts("  Confidence: #{validated.confidence}")
+    IO.puts("  Answer: #{validated["answer"]}")
+    IO.puts("  Confidence: #{validated["confidence"]}")
+
   {:error, errors} ->
     IO.puts("✗ LLM output validation failed:")
+
     Enum.each(errors, fn error ->
       IO.puts("  - #{error.message}")
+
       if error.context do
         IO.puts("    Prompt: #{String.slice(error.context.prompt, 0, 50)}...")
       end
@@ -88,18 +96,23 @@ end
 # Example with validation failure
 bad_llm_output = %{
   "answer" => "Paris",
-  "confidence" => 1.5,  # Invalid: > 1.0
+  # Invalid: > 1.0
+  "confidence" => 1.5,
   "wrong_field" => "This shouldn't be here"
 }
 
 case Sinter.DSPEx.validate_llm_output(qa_signature, bad_llm_output, original_prompt) do
-  {:ok, _} -> IO.puts("Unexpected success")
+  {:ok, _} ->
+    IO.puts("Unexpected success")
+
   {:error, errors} ->
     IO.puts("✓ Correctly caught validation errors:")
+
     Enum.each(errors, fn error ->
       IO.puts("  - Field '#{Enum.join(error.path, ".")}': #{error.message}")
     end)
 end
+
 IO.puts("")
 
 # ============================================================================
@@ -132,10 +145,12 @@ training_examples = [
 ]
 
 # Infer schema from examples (perfect for MIPRO optimization)
-inferred_schema = Sinter.infer_schema(training_examples,
-  title: "Auto-inferred Program Schema",
-  min_occurrence_ratio: 0.8  # Field must appear in 80% of examples to be required
-)
+inferred_schema =
+  Sinter.infer_schema(training_examples,
+    title: "Auto-inferred Program Schema",
+    # Field must appear in 80% of examples to be required
+    min_occurrence_ratio: 0.8
+  )
 
 IO.puts("✓ Schema inferred from #{length(training_examples)} examples")
 IO.puts("  Inferred fields: #{inspect(Map.keys(inferred_schema.fields))}")
@@ -159,34 +174,40 @@ failure_examples = [
     "question" => "Complex physics question",
     "answer" => "Detailed answer",
     "confidence" => 0.7,
-    "sources" => ["Physics textbook"],  # New field not in original schema
-    "uncertainty_score" => 0.3          # Another new field
+    # New field not in original schema
+    "sources" => ["Physics textbook"],
+    # Another new field
+    "uncertainty_score" => 0.3
   },
   %{
     "question" => "Another question",
     "answer" => "Another answer",
     "confidence" => 0.85,
     "sources" => ["Academic paper", "Wikipedia"],
-    "verification_status" => "checked"  # Yet another new field
+    # Yet another new field
+    "verification_status" => "checked"
   }
 ]
 
 # Optimize schema based on failures
 case Sinter.DSPEx.optimize_schema_from_failures(qa_signature, failure_examples,
-  relaxation_strategy: :moderate,
-  add_missing_fields: true
-) do
+       relaxation_strategy: :moderate,
+       add_missing_fields: true
+     ) do
   {:ok, optimized_schema, suggestions} ->
     IO.puts("✓ Schema optimized based on failures")
     IO.puts("  Original fields: #{map_size(qa_signature.fields)}")
     IO.puts("  Optimized fields: #{map_size(optimized_schema.fields)}")
     IO.puts("  Suggestions:")
+
     Enum.each(suggestions, fn suggestion ->
       IO.puts("    - #{suggestion}")
     end)
+
   {:error, reason} ->
     IO.puts("✗ Optimization failed: #{reason}")
 end
+
 IO.puts("")
 
 # ============================================================================
@@ -197,30 +218,47 @@ IO.puts("5. Schema Merging for Complex Programs")
 IO.puts("--------------------------------------")
 
 # Create component schemas for a complex DSPy program
-retrieval_schema = Sinter.Schema.define([
-  {:query, :string, [required: true]},
-  {:retrieved_docs, {:array, :string}, [required: true]},
-  {:retrieval_score, :float, [required: true, gteq: 0.0, lteq: 1.0]}
-], title: "Retrieval Component")
+retrieval_schema =
+  Sinter.Schema.define(
+    [
+      {:query, :string, [required: true]},
+      {:retrieved_docs, {:array, :string}, [required: true]},
+      {:retrieval_score, :float, [required: true, gteq: 0.0, lteq: 1.0]}
+    ],
+    title: "Retrieval Component"
+  )
 
-reasoning_schema = Sinter.Schema.define([
-  {:context, {:array, :string}, [required: true]},
-  {:reasoning_steps, {:array, :string}, [required: true]},
-  {:intermediate_conclusions, {:array, :string}, [optional: true]}
-], title: "Reasoning Component")
+reasoning_schema =
+  Sinter.Schema.define(
+    [
+      {:context, {:array, :string}, [required: true]},
+      {:reasoning_steps, {:array, :string}, [required: true]},
+      {:intermediate_conclusions, {:array, :string}, [optional: true]}
+    ],
+    title: "Reasoning Component"
+  )
 
-generation_schema = Sinter.Schema.define([
-  {:final_answer, :string, [required: true]},
-  {:confidence, :float, [required: true, gteq: 0.0, lteq: 1.0]},
-  {:supporting_evidence, {:array, :string}, [optional: true]}
-], title: "Generation Component")
+generation_schema =
+  Sinter.Schema.define(
+    [
+      {:final_answer, :string, [required: true]},
+      {:confidence, :float, [required: true, gteq: 0.0, lteq: 1.0]},
+      {:supporting_evidence, {:array, :string}, [optional: true]}
+    ],
+    title: "Generation Component"
+  )
 
 # Merge into a complete RAG pipeline schema
-rag_pipeline_schema = Sinter.merge_schemas([
-  retrieval_schema,
-  reasoning_schema,
-  generation_schema
-], title: "RAG Pipeline Schema", strict: true)
+rag_pipeline_schema =
+  Sinter.merge_schemas(
+    [
+      retrieval_schema,
+      reasoning_schema,
+      generation_schema
+    ],
+    title: "RAG Pipeline Schema",
+    strict: true
+  )
 
 IO.puts("✓ Merged RAG pipeline schema")
 IO.puts("  Total fields: #{map_size(rag_pipeline_schema.fields)}")
@@ -229,24 +267,24 @@ IO.puts("  Strict mode: #{rag_pipeline_schema.config.strict}")
 
 # Validate a complete RAG pipeline output
 rag_output = %{
-  query: "What is machine learning?",
-  retrieved_docs: ["ML is a subset of AI...", "Algorithms learn patterns..."],
-  retrieval_score: 0.87,
-  context: ["ML is a subset of AI...", "Algorithms learn patterns..."],
-  reasoning_steps: [
+  "query" => "What is machine learning?",
+  "retrieved_docs" => ["ML is a subset of AI...", "Algorithms learn patterns..."],
+  "retrieval_score" => 0.87,
+  "context" => ["ML is a subset of AI...", "Algorithms learn patterns..."],
+  "reasoning_steps" => [
     "Retrieved relevant documents about ML",
     "Identified key concepts",
     "Synthesized comprehensive answer"
   ],
-  final_answer: "Machine learning is a subset of artificial intelligence...",
-  confidence: 0.92,
-  supporting_evidence: ["Academic definition", "Multiple sources confirm"]
+  "final_answer" => "Machine learning is a subset of artificial intelligence...",
+  "confidence" => 0.92,
+  "supporting_evidence" => ["Academic definition", "Multiple sources confirm"]
 }
 
 {:ok, validated_rag} = Sinter.Validator.validate(rag_pipeline_schema, rag_output)
 IO.puts("✓ RAG pipeline output validated")
-IO.puts("  Confidence: #{validated_rag.confidence}")
-IO.puts("  Steps: #{length(validated_rag.reasoning_steps)}")
+IO.puts("  Confidence: #{validated_rag["confidence"]}")
+IO.puts("  Steps: #{length(validated_rag["reasoning_steps"])}")
 IO.puts("")
 
 # ============================================================================

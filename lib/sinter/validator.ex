@@ -86,11 +86,11 @@ defmodule Sinter.Validator do
   @spec validate(Schema.t(), map(), validation_opts()) :: validation_result()
   def validate(%Schema{} = schema, data, opts \\ []) do
     path = Keyword.get(opts, :path, [])
+    normalized_data = normalize_input(data)
 
-    with :ok <- validate_input_format(data, path),
-         :ok <- validate_required_fields(schema, data, path),
-         {:ok, validated_fields} <- validate_fields(schema, data, opts),
-         :ok <- validate_strict_mode(schema, validated_fields, data, opts),
+    with :ok <- validate_input_format(normalized_data, path),
+         {:ok, validated_fields} <- validate_fields(schema, normalized_data, opts),
+         :ok <- validate_strict_mode(schema, validated_fields, normalized_data, opts),
          {:ok, final_data} <- apply_post_validation(schema, validated_fields, path) do
       {:ok, final_data}
     end
@@ -145,7 +145,7 @@ defmodule Sinter.Validator do
       |> Enum.with_index()
       |> Enum.map(fn {data, index} ->
         # Add index to base path for error reporting
-        index_opts = Keyword.update(opts, :path, [index], &[index | &1])
+        index_opts = Keyword.update(opts, :path, [index], &(&1 ++ [index]))
 
         case validate(schema, data, index_opts) do
           {:ok, validated} -> {:ok, {index, validated}}
@@ -174,35 +174,12 @@ defmodule Sinter.Validator do
 
   # Private helper functions implementing the validation pipeline
 
-  @spec validate_input_format(term(), [atom()]) :: :ok | {:error, [Error.t()]}
+  @spec validate_input_format(term(), [atom() | String.t()]) :: :ok | {:error, [Error.t()]}
   defp validate_input_format(data, _path) when is_map(data), do: :ok
 
   defp validate_input_format(data, path) do
     error = Error.new(path, :input_format, "Expected map, got: #{inspect(data)}")
     {:error, [error]}
-  end
-
-  @spec validate_required_fields(Schema.t(), map(), [atom()]) :: :ok | {:error, [Error.t()]}
-  defp validate_required_fields(schema, data, path) do
-    required_fields = Schema.required_fields(schema)
-
-    missing_fields =
-      Enum.filter(required_fields, fn field ->
-        not Map.has_key?(data, field) and not Map.has_key?(data, to_string(field))
-      end)
-
-    case missing_fields do
-      [] ->
-        :ok
-
-      fields ->
-        errors =
-          Enum.map(fields, fn field ->
-            Error.new(path ++ [field], :required, "field is required")
-          end)
-
-        {:error, errors}
-    end
   end
 
   @spec validate_fields(Schema.t(), map(), validation_opts()) ::
@@ -223,8 +200,14 @@ defmodule Sinter.Validator do
     end
   end
 
-  @spec validate_single_field(atom(), Schema.field_definition(), map(), [atom()], boolean()) ::
-          {atom(), {:ok, term()} | {:error, [Error.t()]} | :skip}
+  @spec validate_single_field(
+          String.t(),
+          Schema.field_definition(),
+          map(),
+          [atom() | String.t() | integer()],
+          boolean()
+        ) ::
+          {String.t(), {:ok, term()} | {:error, [Error.t()]} | :skip}
   defp validate_single_field(field_name, field_def, data, base_path, coerce) do
     field_path = base_path ++ [field_name]
     field_value = get_field_value(data, field_name)
@@ -250,18 +233,52 @@ defmodule Sinter.Validator do
     end
   end
 
-  @spec get_field_value(map(), atom()) :: term() | :missing
+  @spec get_field_value(map(), String.t()) :: term() | :missing
   defp get_field_value(data, field_name) do
-    cond do
-      Map.has_key?(data, field_name) -> Map.get(data, field_name)
-      Map.has_key?(data, to_string(field_name)) -> Map.get(data, to_string(field_name))
-      true -> :missing
+    if Map.has_key?(data, field_name) do
+      Map.get(data, field_name)
+    else
+      :missing
     end
   end
 
-  @spec validate_field_value(Schema.field_definition(), term(), [atom()], boolean()) ::
+  @spec validate_field_value(
+          Schema.field_definition(),
+          term(),
+          [atom() | String.t() | integer()],
+          boolean()
+        ) ::
           {:ok, term()} | {:error, [Error.t()]}
   defp validate_field_value(field_def, value, path, coerce) do
+    case field_def.type do
+      {:object, schema} ->
+        validate_object_field(schema, value, path, coerce)
+
+      {:nullable, {:object, schema}} ->
+        if is_nil(value) do
+          {:ok, nil}
+        else
+          validate_object_field(schema, value, path, coerce)
+        end
+
+      _ ->
+        validate_non_object_field(field_def, value, path, coerce)
+    end
+  end
+
+  defp validate_object_field(schema, value, path, coerce) when is_map(value) do
+    case __MODULE__.validate(schema, value, path: path, coerce: coerce) do
+      {:ok, validated} -> {:ok, validated}
+      {:error, errors} -> {:error, errors}
+    end
+  end
+
+  defp validate_object_field(_schema, value, path, _coerce) do
+    error = Error.new(path, :type, "expected object, got #{type_name(value)}")
+    {:error, [error]}
+  end
+
+  defp validate_non_object_field(field_def, value, path, coerce) do
     # First apply coercion if enabled
     if coerce do
       case Types.coerce(field_def.type, value) do
@@ -286,7 +303,11 @@ defmodule Sinter.Validator do
     end
   end
 
-  @spec validate_with_constraints(Schema.field_definition(), term(), [atom()]) ::
+  @spec validate_with_constraints(
+          Schema.field_definition(),
+          term(),
+          [atom() | String.t() | integer()]
+        ) ::
           {:ok, term()} | {:error, [Error.t()]}
   defp validate_with_constraints(field_def, value, path) do
     # First validate the type
@@ -303,7 +324,8 @@ defmodule Sinter.Validator do
     end
   end
 
-  @spec validate_constraints(keyword(), term(), [atom()]) :: :ok | {:error, [Error.t()]}
+  @spec validate_constraints(keyword(), term(), [atom() | String.t() | integer()]) ::
+          :ok | {:error, [Error.t()]}
   defp validate_constraints(constraints, value, path) do
     errors =
       Enum.flat_map(constraints, fn constraint ->
@@ -319,7 +341,7 @@ defmodule Sinter.Validator do
     end
   end
 
-  @spec validate_single_constraint(Types.constraint(), term(), [atom()]) ::
+  @spec validate_single_constraint(Types.constraint(), term(), [atom() | String.t() | integer()]) ::
           :ok | {:error, Error.t()}
   defp validate_single_constraint({:min_length, min}, value, path)
        when is_binary(value) or is_list(value) do
@@ -441,10 +463,11 @@ defmodule Sinter.Validator do
     end
   end
 
-  @spec check_extra_fields(map(), map(), [atom()]) :: :ok | {:error, [Error.t()]}
+  @spec check_extra_fields(map(), map(), [atom() | String.t() | integer()]) ::
+          :ok | {:error, [Error.t()]}
   defp check_extra_fields(validated_data, original_data, path) do
-    validated_keys = Map.keys(validated_data) |> Enum.map(&to_string/1) |> MapSet.new()
-    original_keys = Map.keys(original_data) |> Enum.map(&to_string/1) |> MapSet.new()
+    validated_keys = Map.keys(validated_data) |> MapSet.new()
+    original_keys = Map.keys(original_data) |> MapSet.new()
 
     extra_keys = MapSet.difference(original_keys, validated_keys) |> MapSet.to_list()
 
@@ -458,7 +481,7 @@ defmodule Sinter.Validator do
     end
   end
 
-  @spec apply_post_validation(Schema.t(), map(), [atom()]) ::
+  @spec apply_post_validation(Schema.t(), map(), [atom() | String.t() | integer()]) ::
           {:ok, map()} | {:error, [Error.t()]}
   defp apply_post_validation(schema, validated_data, path) do
     case Schema.post_validate_fn(schema) do
@@ -550,4 +573,33 @@ defmodule Sinter.Validator do
   @spec length_of(String.t() | list()) :: non_neg_integer()
   defp length_of(value) when is_binary(value), do: String.length(value)
   defp length_of(value) when is_list(value), do: length(value)
+
+  defp normalize_input(%_{} = struct) do
+    struct
+    |> Map.from_struct()
+    |> normalize_input()
+  end
+
+  defp normalize_input(data) when is_map(data) do
+    Enum.reduce(data, %{}, fn {key, value}, acc ->
+      Map.put(acc, normalize_key(key), value)
+    end)
+  end
+
+  defp normalize_input(data), do: data
+
+  defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp normalize_key(key) when is_binary(key), do: key
+  defp normalize_key(key), do: to_string(key)
+
+  defp type_name(nil), do: "null"
+  defp type_name(value) when is_binary(value), do: "string"
+  defp type_name(value) when is_integer(value), do: "integer"
+  defp type_name(value) when is_float(value), do: "float"
+  defp type_name(value) when is_boolean(value), do: "boolean"
+  defp type_name(value) when is_atom(value), do: "atom"
+  defp type_name(value) when is_list(value), do: "list"
+  defp type_name(value) when is_tuple(value), do: "tuple"
+  defp type_name(value) when is_map(value), do: "map"
+  defp type_name(_), do: "unknown"
 end

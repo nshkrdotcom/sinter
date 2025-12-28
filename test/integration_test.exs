@@ -33,11 +33,11 @@ defmodule SinterIntegrationTest do
       }
 
       assert {:ok, validated} = Validator.validate(user_schema, valid_data)
-      assert validated[:username] == "alice_123"
-      assert validated[:email] == "alice@example.com"
-      assert validated[:age] == 25
-      assert validated[:interests] == ["programming", "music"]
-      assert validated[:terms_accepted] == true
+      assert validated["username"] == "alice_123"
+      assert validated["email"] == "alice@example.com"
+      assert validated["age"] == 25
+      assert validated["interests"] == ["programming", "music"]
+      assert validated["terms_accepted"] == true
 
       # 3. Generate JSON Schema for API documentation
       json_schema = JsonSchema.generate(user_schema)
@@ -153,10 +153,10 @@ defmodule SinterIntegrationTest do
       }
 
       assert {:ok, validated} = Validator.validate(product_schema, valid_product)
-      assert validated[:name] == "Wireless Headphones"
-      assert validated[:sku] == "EL-1234-WH"
-      assert validated[:price] == 199.99
-      assert validated[:category] == "electronics"
+      assert validated["name"] == "Wireless Headphones"
+      assert validated["sku"] == "EL-1234-WH"
+      assert validated["price"] == 199.99
+      assert validated["category"] == "electronics"
 
       # Generate OpenAI-optimized JSON Schema
       openai_schema = JsonSchema.for_provider(product_schema, :openai)
@@ -201,13 +201,13 @@ defmodule SinterIntegrationTest do
       # Custom validation function
       validate_order_business_rules = fn order ->
         # Business rule: Orders over $1000 require billing address
-        if order[:total_amount] > 1000.0 and is_nil(order[:billing_address]) do
+        if order["total_amount"] > 1000.0 and is_nil(order["billing_address"]) do
           {:error, "Orders over $1000 require billing address"}
         else
           # Business rule: Free shipping for orders over $50
           updated_order =
-            if order[:total_amount] > 50.0 do
-              Map.put(order, :free_shipping, true)
+            if order["total_amount"] > 50.0 do
+              Map.put(order, "free_shipping", true)
             else
               order
             end
@@ -251,16 +251,16 @@ defmodule SinterIntegrationTest do
       }
 
       assert {:ok, validated} = Validator.validate(order_schema, valid_order)
-      assert validated[:order_id] == "ORD-12345678"
-      assert validated[:total_amount] == 50.0
+      assert validated["order_id"] == "ORD-12345678"
+      assert validated["total_amount"] == 50.0
       # Post-validation should not add free_shipping for exactly $50
-      refute Map.has_key?(validated, :free_shipping)
+      refute Map.has_key?(validated, "free_shipping")
 
       # Order with free shipping (over $50)
       large_order = Map.put(valid_order, "total_amount", 75.0)
 
       assert {:ok, validated} = Validator.validate(order_schema, large_order)
-      assert validated[:free_shipping] == true
+      assert validated["free_shipping"] == true
 
       # Large order without billing address (should fail post-validation)
       expensive_order = %{
@@ -292,9 +292,9 @@ defmodule SinterIntegrationTest do
         })
 
       assert {:ok, validated} = Validator.validate(order_schema, expensive_order_with_billing)
-      assert validated[:total_amount] == 1500.0
-      assert validated[:free_shipping] == true
-      assert is_map(validated[:billing_address])
+      assert validated["total_amount"] == 1500.0
+      assert validated["free_shipping"] == true
+      assert is_map(validated["billing_address"])
     end
   end
 
@@ -339,20 +339,20 @@ defmodule SinterIntegrationTest do
       }
 
       assert {:ok, validated} = Validator.validate(function_schema, function_call_data)
-      assert validated[:query] == "machine learning tutorials"
-      assert validated[:max_results] == 25
-      assert validated[:include_metadata] == true
-      assert validated[:filters] == ["recent", "video"]
+      assert validated["query"] == "machine learning tutorials"
+      assert validated["max_results"] == 25
+      assert validated["include_metadata"] == true
+      assert validated["filters"] == ["recent", "video"]
 
       # Test with minimal data (using defaults)
       minimal_call = %{"query" => "elixir programming"}
 
       assert {:ok, validated} = Validator.validate(function_schema, minimal_call)
-      assert validated[:query] == "elixir programming"
+      assert validated["query"] == "elixir programming"
       # default applied
-      assert validated[:max_results] == 10
+      assert validated["max_results"] == 10
       # default applied
-      assert validated[:include_metadata] == false
+      assert validated["include_metadata"] == false
     end
 
     test "Anthropic tool use workflow" do
@@ -396,9 +396,9 @@ defmodule SinterIntegrationTest do
       }
 
       assert {:ok, validated} = Validator.validate(tool_schema, create_operation)
-      assert validated[:action] == "create"
-      assert validated[:resource_type] == "user"
-      assert is_map(validated[:data])
+      assert validated["action"] == "create"
+      assert validated["resource_type"] == "user"
+      assert is_map(validated["data"])
 
       read_operation = %{
         "action" => "read",
@@ -407,8 +407,8 @@ defmodule SinterIntegrationTest do
       }
 
       assert {:ok, validated} = Validator.validate(tool_schema, read_operation)
-      assert validated[:action] == "read"
-      assert validated[:resource_id] == "post_123"
+      assert validated["action"] == "read"
+      assert validated["resource_id"] == "post_123"
     end
   end
 
@@ -444,19 +444,19 @@ defmodule SinterIntegrationTest do
       assert {:ok, validated} = Validator.validate(complex_schema, complex_data)
 
       # Check tuple validation
-      first_point = List.first(validated[:data_points])
+      first_point = List.first(validated["data_points"])
       assert first_point == {"temperature", 23.5}
 
       # Check map with union values
-      assert validated[:metadata]["source"] == "sensor_001"
-      assert validated[:metadata]["calibrated"] == true
-      assert validated[:metadata]["readings_count"] == 100
+      assert validated["metadata"]["source"] == "sensor_001"
+      assert validated["metadata"]["calibrated"] == true
+      assert validated["metadata"]["readings_count"] == 100
 
       # Test with string processing options (union alternative)
       data_with_string_options = Map.put(complex_data, "processing_options", "default")
 
       assert {:ok, validated} = Validator.validate(complex_schema, data_with_string_options)
-      assert validated[:processing_options] == "default"
+      assert validated["processing_options"] == "default"
 
       # Generate JSON Schema for complex types
       json_schema = JsonSchema.generate(complex_schema)
@@ -483,33 +483,30 @@ defmodule SinterIntegrationTest do
     test "polymorphic data validation workflow" do
       # Custom validation based on message type
       validate_message_content = fn message ->
-        case message[:type] do
+        case message["type"] do
           "text" ->
-            if is_binary(message[:content]) do
+            if is_binary(message["content"]) do
               {:ok, message}
             else
               {:error, "Text messages must have string content"}
             end
 
           "image" ->
-            if is_map(message[:content]) and
-                 (Map.has_key?(message[:content], "url") or Map.has_key?(message[:content], :url)) do
+            if is_map(message["content"]) and Map.has_key?(message["content"], "url") do
               {:ok, message}
             else
               {:error, "Image messages must have content with url"}
             end
 
           "file" ->
-            if is_map(message[:content]) and
-                 (Map.has_key?(message[:content], "filename") or
-                    Map.has_key?(message[:content], :filename)) do
+            if is_map(message["content"]) and Map.has_key?(message["content"], "filename") do
               {:ok, message}
             else
               {:error, "File messages must have content with filename"}
             end
 
           "system" ->
-            {:ok, Map.put(message, :system_processed, true)}
+            {:ok, Map.put(message, "system_processed", true)}
         end
       end
 
@@ -533,8 +530,8 @@ defmodule SinterIntegrationTest do
       }
 
       assert {:ok, validated} = Validator.validate(message_schema, text_message)
-      assert validated[:type] == "text"
-      assert validated[:content] == "Hello, world!"
+      assert validated["type"] == "text"
+      assert validated["content"] == "Hello, world!"
 
       image_message = %{
         "type" => "image",
@@ -546,8 +543,8 @@ defmodule SinterIntegrationTest do
       }
 
       assert {:ok, validated} = Validator.validate(message_schema, image_message)
-      assert validated[:type] == "image"
-      assert validated[:content]["url"] == "https://example.com/image.jpg"
+      assert validated["type"] == "image"
+      assert validated["content"]["url"] == "https://example.com/image.jpg"
 
       system_message = %{
         "type" => "system",
@@ -556,7 +553,7 @@ defmodule SinterIntegrationTest do
       }
 
       assert {:ok, validated} = Validator.validate(message_schema, system_message)
-      assert validated[:system_processed] == true
+      assert validated["system_processed"] == true
 
       # Test validation failures
       invalid_text = %{
@@ -611,26 +608,26 @@ defmodule SinterIntegrationTest do
       assert {:ok, normalized} = Validator.validate(api_schema, api_input, coerce: true)
 
       # Check types were coerced correctly
-      assert normalized[:user_id] == 12_345
-      assert normalized[:limit] == 50
-      assert normalized[:offset] == 100
-      assert normalized[:sort_ascending] == false
-      assert normalized[:include_metadata] == true
-      assert normalized[:filters] == ["active", "verified"]
+      assert normalized["user_id"] == 12_345
+      assert normalized["limit"] == 50
+      assert normalized["offset"] == 100
+      assert normalized["sort_ascending"] == false
+      assert normalized["include_metadata"] == true
+      assert normalized["filters"] == ["active", "verified"]
 
       # Test with minimal input (defaults applied)
       minimal_input = %{"user_id" => "999"}
 
       assert {:ok, normalized} = Validator.validate(api_schema, minimal_input, coerce: true)
-      assert normalized[:user_id] == 999
+      assert normalized["user_id"] == 999
       # default
-      assert normalized[:limit] == 20
+      assert normalized["limit"] == 20
       # default
-      assert normalized[:offset] == 0
+      assert normalized["offset"] == 0
       # default
-      assert normalized[:sort_ascending] == true
+      assert normalized["sort_ascending"] == true
       # default
-      assert normalized[:include_metadata] == false
+      assert normalized["include_metadata"] == false
 
       # Test coercion failures
       invalid_input = %{
@@ -640,7 +637,7 @@ defmodule SinterIntegrationTest do
 
       assert {:error, [error]} = Validator.validate(api_schema, invalid_input, coerce: true)
       assert error.code == :coercion
-      assert error.path == [:user_id]
+      assert error.path == ["user_id"]
 
       # Test constraint violations after coercion
       invalid_constraints = %{
@@ -704,21 +701,21 @@ defmodule SinterIntegrationTest do
 
       # Check specific results
       {:ok, alice} = Enum.at(results, 0)
-      assert alice[:name] == "Alice Johnson"
+      assert alice["name"] == "Alice Johnson"
       # coerced from string
-      assert alice[:age] == 28
+      assert alice["age"] == 28
       # coerced from string
-      assert alice[:is_active] == true
+      assert alice["is_active"] == true
 
       {:ok, bob} = Enum.at(results, 1)
       # coerced from string
-      assert bob[:is_active] == false
+      assert bob["is_active"] == false
 
       {:ok, charlie} = Enum.at(results, 2)
       # default value
-      assert charlie[:is_active] == true
+      assert charlie["is_active"] == true
       # optional field not provided
-      refute Map.has_key?(charlie, :age)
+      refute Map.has_key?(charlie, "age")
 
       # Test batch validation for import
       assert {:ok, all_validated} = Validator.validate_many(import_schema, csv_rows, coerce: true)

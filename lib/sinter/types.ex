@@ -35,9 +35,20 @@ defmodule Sinter.Types do
       {:error, [%Sinter.Error{code: :coercion, ...}]}
   """
 
-  alias Sinter.Error
+  alias Sinter.{Error, Schema, Validator}
 
-  @type primitive_type :: :string | :integer | :float | :boolean | :atom | :any | :map
+  @type primitive_type ::
+          :string
+          | :integer
+          | :float
+          | :boolean
+          | :atom
+          | :any
+          | :map
+          | :date
+          | :datetime
+          | :uuid
+          | :null
 
   @type composite_type ::
           {:array, type_spec()}
@@ -45,6 +56,8 @@ defmodule Sinter.Types do
           | {:union, [type_spec()]}
           | {:tuple, [type_spec()]}
           | {:map, type_spec(), type_spec()}
+          | {:nullable, type_spec()}
+          | {:object, Schema.t() | [Schema.field_spec()]}
 
   @type type_spec :: primitive_type() | composite_type()
 
@@ -104,6 +117,53 @@ defmodule Sinter.Types do
   def validate(:atom, value, _path) when is_atom(value), do: {:ok, value}
   def validate(:any, value, _path), do: {:ok, value}
   def validate(:map, value, _path) when is_map(value), do: {:ok, value}
+  def validate(:null, nil, _path), do: {:ok, nil}
+
+  def validate(:date, value, path) when is_binary(value) do
+    case Date.from_iso8601(value) do
+      {:ok, _date} -> {:ok, value}
+      _ -> {:error, [Error.new(path, :format, "expected ISO8601 date string")]}
+    end
+  end
+
+  def validate(:date, value, path) do
+    error = Error.new(path, :type, "expected date string, got #{type_name(value)}")
+    {:error, [error]}
+  end
+
+  def validate(:datetime, value, path) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, _datetime, _offset} ->
+        {:ok, value}
+
+      _ ->
+        case NaiveDateTime.from_iso8601(value) do
+          {:ok, _datetime} -> {:ok, value}
+          _ -> {:error, [Error.new(path, :format, "expected ISO8601 datetime string")]}
+        end
+    end
+  end
+
+  def validate(:datetime, value, path) do
+    error = Error.new(path, :type, "expected datetime string, got #{type_name(value)}")
+    {:error, [error]}
+  end
+
+  def validate(:uuid, value, path) when is_binary(value) do
+    if String.match?(
+         value,
+         ~r/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+       ) do
+      {:ok, value}
+    else
+      {:error, [Error.new(path, :format, "expected UUID string")]}
+    end
+  end
+
+  def validate(:uuid, value, path) do
+    error = Error.new(path, :type, "expected UUID string, got #{type_name(value)}")
+    {:error, [error]}
+  end
 
   # Array validation with constraints
   def validate({:array, inner_type, constraints}, value, path) when is_list(value) do
@@ -223,6 +283,28 @@ defmodule Sinter.Types do
     {:error, [error]}
   end
 
+  # Nullable types
+  def validate({:nullable, _inner_type}, nil, _path), do: {:ok, nil}
+
+  def validate({:nullable, inner_type}, value, path) do
+    validate(inner_type, value, path)
+  end
+
+  # Object schema type
+  def validate({:object, schema_or_fields}, value, path) when is_map(value) do
+    schema = normalize_object_schema(schema_or_fields)
+
+    case Validator.validate(schema, value, path: path) do
+      {:ok, validated} -> {:ok, validated}
+      {:error, errors} -> {:error, errors}
+    end
+  end
+
+  def validate({:object, _schema}, value, path) do
+    error = Error.new(path, :type, "expected object, got #{type_name(value)}")
+    {:error, [error]}
+  end
+
   # Type mismatch for primitive types
   def validate(expected_type, value, path) when is_atom(expected_type) do
     error = Error.new(path, :type, "expected #{expected_type}, got #{type_name(value)}")
@@ -318,6 +400,42 @@ defmodule Sinter.Types do
     {:error, [Error.new([], :coercion, "cannot coerce '#{inspect(value)}' to atom")]}
   end
 
+  # Null coercion
+  def coerce(:null, nil), do: {:ok, nil}
+
+  def coerce(:null, value) do
+    {:error, [Error.new([], :coercion, "cannot coerce '#{inspect(value)}' to null")]}
+  end
+
+  # Nullable coercion
+  def coerce({:nullable, _inner_type}, nil), do: {:ok, nil}
+
+  def coerce({:nullable, inner_type}, value) do
+    coerce(inner_type, value)
+  end
+
+  # Date/time coercion
+  def coerce(:date, %Date{} = value), do: {:ok, Date.to_iso8601(value)}
+  def coerce(:date, value) when is_binary(value), do: {:ok, value}
+
+  def coerce(:date, value) do
+    {:error, [Error.new([], :coercion, "cannot coerce '#{inspect(value)}' to date")]}
+  end
+
+  def coerce(:datetime, %DateTime{} = value), do: {:ok, DateTime.to_iso8601(value)}
+  def coerce(:datetime, %NaiveDateTime{} = value), do: {:ok, NaiveDateTime.to_iso8601(value)}
+  def coerce(:datetime, value) when is_binary(value), do: {:ok, value}
+
+  def coerce(:datetime, value) do
+    {:error, [Error.new([], :coercion, "cannot coerce '#{inspect(value)}' to datetime")]}
+  end
+
+  def coerce(:uuid, value) when is_binary(value), do: {:ok, value}
+
+  def coerce(:uuid, value) do
+    {:error, [Error.new([], :coercion, "cannot coerce '#{inspect(value)}' to uuid")]}
+  end
+
   # Array coercion with constraints
   def coerce({:array, inner_type, _constraints}, value) when is_list(value) do
     # For coercion, we ignore constraints and delegate to basic array coercion
@@ -370,6 +488,20 @@ defmodule Sinter.Types do
     )
   end
 
+  # Object coercion
+  def coerce({:object, schema_or_fields}, value) when is_map(value) do
+    schema = normalize_object_schema(schema_or_fields)
+
+    case Validator.validate(schema, value, coerce: true) do
+      {:ok, validated} -> {:ok, validated}
+      {:error, errors} -> {:error, errors}
+    end
+  end
+
+  def coerce({:object, _schema}, value) do
+    {:error, [Error.new([], :coercion, "cannot coerce '#{inspect(value)}' to object")]}
+  end
+
   # No coercion needed/available
   def coerce(_type, value), do: {:ok, value}
 
@@ -394,6 +526,10 @@ defmodule Sinter.Types do
   def to_json_schema(:integer), do: %{"type" => "integer"}
   def to_json_schema(:float), do: %{"type" => "number"}
   def to_json_schema(:boolean), do: %{"type" => "boolean"}
+  def to_json_schema(:null), do: %{"type" => "null"}
+  def to_json_schema(:date), do: %{"type" => "string", "format" => "date"}
+  def to_json_schema(:datetime), do: %{"type" => "string", "format" => "date-time"}
+  def to_json_schema(:uuid), do: %{"type" => "string", "format" => "uuid"}
   def to_json_schema(:atom), do: %{"type" => "string", "description" => "Atom value"}
   def to_json_schema(:any), do: %{}
   def to_json_schema(:map), do: %{"type" => "object", "additionalProperties" => true}
@@ -452,9 +588,23 @@ defmodule Sinter.Types do
     end
   end
 
+  def to_json_schema({:nullable, inner_type}) do
+    %{
+      "anyOf" => [
+        to_json_schema(inner_type),
+        %{"type" => "null"}
+      ]
+    }
+  end
+
+  def to_json_schema({:object, _schema}) do
+    %{"type" => "object"}
+  end
+
   # Private helper functions
 
-  @spec validate_array_constraints(keyword(), [term()], [atom()]) :: :ok | {:error, [Error.t()]}
+  @spec validate_array_constraints(keyword(), [term()], [atom() | String.t() | integer()]) ::
+          :ok | {:error, [Error.t()]}
   defp validate_array_constraints(constraints, value, path) do
     errors =
       Enum.flat_map(constraints, fn
@@ -483,7 +633,8 @@ defmodule Sinter.Types do
     end
   end
 
-  @spec try_union_types([type_spec()], term(), [atom()]) :: {:ok, term()} | {:error, []}
+  @spec try_union_types([type_spec()], term(), [atom() | String.t() | integer()]) ::
+          {:ok, term()} | {:error, []}
   defp try_union_types(types, value, path) do
     Enum.reduce_while(types, {:error, []}, fn type, _acc ->
       case validate(type, value, path) do
@@ -493,7 +644,7 @@ defmodule Sinter.Types do
     end)
   end
 
-  @spec validate_tuple_elements([term()], [type_spec()], [atom()]) ::
+  @spec validate_tuple_elements([term()], [type_spec()], [atom() | String.t() | integer()]) ::
           {:ok, tuple()} | {:error, [Error.t()]}
   defp validate_tuple_elements(values, types, base_path) do
     results =
@@ -517,6 +668,7 @@ defmodule Sinter.Types do
   end
 
   @spec type_name(term()) :: String.t()
+  defp type_name(nil), do: "null"
   defp type_name(value) when is_binary(value), do: "string"
   defp type_name(value) when is_integer(value), do: "integer"
   defp type_name(value) when is_float(value), do: "float"
@@ -526,4 +678,10 @@ defmodule Sinter.Types do
   defp type_name(value) when is_tuple(value), do: "tuple"
   defp type_name(value) when is_map(value), do: "map"
   defp type_name(_), do: "unknown"
+
+  @spec normalize_object_schema(Schema.t() | [Schema.field_spec()]) :: Schema.t()
+  defp normalize_object_schema(%Schema{} = schema), do: schema
+
+  defp normalize_object_schema(field_specs) when is_list(field_specs),
+    do: Schema.define(field_specs)
 end

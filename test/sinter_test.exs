@@ -131,12 +131,12 @@ defmodule SinterTest do
     test "includes field name in error paths" do
       assert {:error, [error]} = Sinter.validate_value(:email, :string, 123)
       assert error.code == :type
-      assert error.path == [:email]
+      assert error.path == ["email"]
 
       # For nested structures
       assert {:error, [error]} = Sinter.validate_value(:tags, {:array, :string}, ["valid", 123])
       assert error.code == :type
-      assert error.path == [:tags, 1]
+      assert error.path == ["tags", 1]
     end
 
     test "applies constraints to named fields" do
@@ -157,7 +157,7 @@ defmodule SinterTest do
                )
 
       assert error.code == :format
-      assert error.path == [:email]
+      assert error.path == ["email"]
     end
 
     test "supports coercion for named fields" do
@@ -165,7 +165,7 @@ defmodule SinterTest do
 
       assert {:error, [error]} = Sinter.validate_value(:count, :integer, "invalid", coerce: true)
       assert error.code == :coercion
-      assert error.path == [:count]
+      assert error.path == ["count"]
     end
 
     test "combines constraints and coercion" do
@@ -190,7 +190,7 @@ defmodule SinterTest do
                )
 
       assert error.code == :lt
-      assert error.path == [:score]
+      assert error.path == ["score"]
     end
   end
 
@@ -374,8 +374,8 @@ defmodule SinterTest do
 
       valid_user = %{name: "Alice", age: 30}
       assert {:ok, validated} = user_validator.(valid_user)
-      assert validated[:name] == "Alice"
-      assert validated[:age] == 30
+      assert validated["name"] == "Alice"
+      assert validated["age"] == 30
 
       # missing age
       invalid_user = %{name: "Bob"}
@@ -415,9 +415,9 @@ defmodule SinterTest do
 
       data_with_strings = %{name: "Alice", age: "30"}
       assert {:ok, validated} = user_validator.(data_with_strings)
-      assert validated[:name] == "Alice"
+      assert validated["name"] == "Alice"
       # coerced from string
-      assert validated[:age] == 30
+      assert validated["age"] == 30
     end
 
     test "batch validator preserves validation behavior" do
@@ -441,8 +441,8 @@ defmodule SinterTest do
       {:ok, schema_result} = Sinter.Validator.validate(schema, test_data)
 
       # Results should be equivalent
-      assert validator_result[:email] == schema_result[:email]
-      assert validator_result[:score] == schema_result[:score]
+      assert validator_result["email"] == schema_result["email"]
+      assert validator_result["score"] == schema_result["score"]
     end
   end
 
@@ -484,7 +484,7 @@ defmodule SinterTest do
 
       # Paths should be appropriate for each context
       assert error1.path == []
-      assert error2.path == [:field]
+      assert error2.path == ["field"]
       # Batch errors don't include field names by default
       assert error3.path == []
     end
@@ -602,7 +602,7 @@ defmodule SinterTest do
       assert error.message =~ "got integer"
 
       {:error, [error]} = Sinter.validate_value(:email, :string, 123)
-      assert error.path == [:email]
+      assert error.path == ["email"]
       assert error.message =~ "expected string"
     end
 
@@ -664,7 +664,8 @@ defmodule SinterTest do
           {:age, :integer}
         ])
 
-      assert {:ok, %{name: "Alice", age: 30}} = batch_validator.(%{name: "Alice", age: 30})
+      assert {:ok, %{"name" => "Alice", "age" => 30}} =
+               batch_validator.(%{name: "Alice", age: 30})
     end
   end
 
@@ -680,10 +681,10 @@ defmodule SinterTest do
 
       assert %Sinter.Schema{} = schema
       fields = Sinter.Schema.fields(schema)
-      assert Map.has_key?(fields, :name)
-      assert Map.has_key?(fields, :age)
-      assert fields[:name].type == :string
-      assert fields[:age].type == :integer
+      assert Map.has_key?(fields, "name")
+      assert Map.has_key?(fields, "age")
+      assert fields["name"].type == :string
+      assert fields["age"].type == :integer
     end
 
     test "infers schema with mixed types" do
@@ -695,9 +696,9 @@ defmodule SinterTest do
       schema = Sinter.infer_schema(examples)
       fields = Sinter.Schema.fields(schema)
 
-      assert fields[:id].type == :string
-      assert fields[:score].type == :float
-      assert fields[:active].type == :boolean
+      assert fields["id"].type == :string
+      assert fields["score"].type == :float
+      assert fields["active"].type == :boolean
     end
 
     test "infers schema with arrays" do
@@ -709,8 +710,8 @@ defmodule SinterTest do
       schema = Sinter.infer_schema(examples)
       fields = Sinter.Schema.fields(schema)
 
-      assert fields[:tags].type == {:array, :string}
-      assert fields[:scores].type == {:array, :integer}
+      assert fields["tags"].type == {:array, :string}
+      assert fields["scores"].type == {:array, :integer}
     end
 
     test "handles missing fields across examples" do
@@ -726,11 +727,11 @@ defmodule SinterTest do
       fields = Sinter.Schema.fields(schema)
 
       # in all examples
-      assert fields[:name].required == true
+      assert fields["name"].required == true
       # missing in some
-      assert fields[:age].required == false
+      assert fields["age"].required == false
       # missing in most
-      assert fields[:email].required == false
+      assert fields["email"].required == false
     end
 
     test "raises on empty examples" do
@@ -763,15 +764,15 @@ defmodule SinterTest do
       merged = Sinter.merge_schemas([schema1, schema2])
       fields = Sinter.Schema.fields(merged)
 
-      assert Map.has_key?(fields, :name)
-      assert Map.has_key?(fields, :age)
-      assert Map.has_key?(fields, :email)
-      assert Map.has_key?(fields, :active)
+      assert Map.has_key?(fields, "name")
+      assert Map.has_key?(fields, "age")
+      assert Map.has_key?(fields, "email")
+      assert Map.has_key?(fields, "active")
 
-      assert fields[:name].required == true
-      assert fields[:email].required == true
-      assert fields[:age].required == false
-      assert fields[:active].default == true
+      assert fields["name"].required == true
+      assert fields["email"].required == true
+      assert fields["age"].required == false
+      assert fields["active"].default == true
     end
 
     test "handles conflicting field definitions" do
@@ -790,8 +791,8 @@ defmodule SinterTest do
       fields = Sinter.Schema.fields(merged)
 
       # Last schema wins for conflicts
-      assert fields[:name].required == false
-      assert Enum.find(fields[:name].constraints, &match?({:min_length, 5}, &1))
+      assert fields["name"].required == false
+      assert Enum.find(fields["name"].constraints, &match?({:min_length, 5}, &1))
     end
 
     test "merges schema configurations" do

@@ -246,6 +246,26 @@ defmodule Sinter.JsonSchemaTest do
       assert string_map_schema["type"] == "object"
       assert string_map_schema["additionalProperties"]["type"] == "integer"
     end
+
+    test "converts object schema types" do
+      schema =
+        Schema.define([
+          {:profile,
+           {:object,
+            [
+              {:name, :string, [required: true]},
+              {:age, :integer, [optional: true]}
+            ]}, [required: true]}
+        ])
+
+      json_schema = JsonSchema.generate(schema)
+      profile_schema = json_schema["properties"]["profile"]
+
+      assert profile_schema["type"] == "object"
+      assert profile_schema["properties"]["name"]["type"] == "string"
+      assert profile_schema["required"] == ["name"]
+      assert profile_schema["additionalProperties"] == true
+    end
   end
 
   describe "generate/2 - constraint conversion" do
@@ -418,6 +438,7 @@ defmodule Sinter.JsonSchemaTest do
 
       openai_schema = JsonSchema.for_provider(schema, :openai)
 
+      assert openai_schema["$schema"] == "http://json-schema.org/draft-07/schema#"
       # OpenAI requires additionalProperties: false
       assert openai_schema["additionalProperties"] == false
 
@@ -430,11 +451,28 @@ defmodule Sinter.JsonSchemaTest do
 
       anthropic_schema = JsonSchema.for_provider(schema, :anthropic)
 
+      assert anthropic_schema["$schema"] == "http://json-schema.org/draft-07/schema#"
       # Anthropic prefers additionalProperties: false
       assert anthropic_schema["additionalProperties"] == false
 
       # Should have required array
       assert is_list(anthropic_schema["required"])
+    end
+
+    test "applies provider strictness recursively" do
+      schema =
+        Schema.define([
+          {:profile,
+           {:object,
+            [
+              {:name, :string, [required: true]}
+            ]}, [required: true]}
+        ])
+
+      openai_schema = JsonSchema.for_provider(schema, :openai)
+
+      assert openai_schema["additionalProperties"] == false
+      assert openai_schema["properties"]["profile"]["additionalProperties"] == false
     end
 
     test "OpenAI removes unsupported formats" do
@@ -495,74 +533,33 @@ defmodule Sinter.JsonSchemaTest do
       assert :ok = JsonSchema.validate_schema(valid_schema)
     end
 
-    test "detects missing type field" do
+    test "rejects unknown meta schemas" do
       invalid_schema = %{
-        "properties" => %{
-          "name" => %{"type" => "string"}
-        }
+        "$schema" => "https://example.com/unknown-schema",
+        "type" => "object"
       }
 
       assert {:error, issues} = JsonSchema.validate_schema(invalid_schema)
-      assert "Schema missing 'type' field" in issues
+      assert Enum.any?(issues, &String.contains?(&1, "could not build"))
     end
 
-    test "detects missing properties for object type" do
+    test "rejects invalid type values" do
       invalid_schema = %{
-        "type" => "object",
-        "required" => ["name"]
+        "type" => "not-a-type"
       }
 
       assert {:error, issues} = JsonSchema.validate_schema(invalid_schema)
-      assert "Object schema missing 'properties'" in issues
+      assert Enum.any?(issues, &String.contains?(&1, "could not build"))
     end
 
-    test "validates constraint consistency" do
-      # Invalid numeric constraints
+    test "rejects invalid keyword value types" do
       invalid_schema = %{
-        "type" => "object",
-        "properties" => %{
-          "value" => %{
-            "type" => "integer",
-            "minimum" => 10,
-            "maximum" => 5
-          }
-        }
+        "type" => "string",
+        "minLength" => "ten"
       }
 
       assert {:error, issues} = JsonSchema.validate_schema(invalid_schema)
-      assert Enum.any?(issues, &String.contains?(&1, "minimum"))
-    end
-
-    test "validates string constraint consistency" do
-      invalid_schema = %{
-        "type" => "object",
-        "properties" => %{
-          "text" => %{
-            "type" => "string",
-            "minLength" => 10,
-            "maxLength" => 5
-          }
-        }
-      }
-
-      assert {:error, issues} = JsonSchema.validate_schema(invalid_schema)
-      assert Enum.any?(issues, &String.contains?(&1, "minLength"))
-    end
-
-    test "validates array constraint consistency" do
-      invalid_schema = %{
-        "type" => "object",
-        "properties" => %{
-          "items" => %{
-            "type" => "array",
-            "minItems" => 5,
-            "maxItems" => 2
-          }
-        }
-      }
-
-      assert {:error, issues} = JsonSchema.validate_schema(invalid_schema)
-      assert Enum.any?(issues, &String.contains?(&1, "minItems"))
+      assert Enum.any?(issues, &String.contains?(&1, "could not build"))
     end
   end
 
@@ -677,7 +674,7 @@ defmodule Sinter.JsonSchemaTest do
 
       schema =
         Schema.define([
-          {String.to_atom(long_name), :string, [required: true]}
+          {long_name, :string, [required: true]}
         ])
 
       json_schema = JsonSchema.generate(schema)
@@ -713,7 +710,7 @@ defmodule Sinter.JsonSchemaTest do
   end
 
   describe "JSON Schema specification compliance" do
-    test "validates against JSON Schema Draft 2020-12 spec" do
+    test "generates Draft 2020-12 schemas by default" do
       schema =
         Schema.define([
           {:name, :string, [required: true, min_length: 1]},
@@ -743,6 +740,20 @@ defmodule Sinter.JsonSchemaTest do
       assert props["tags"]["items"]["type"] == "string"
       assert props["tags"]["minItems"] == 1
       assert props["tags"]["maxItems"] == 10
+    end
+
+    test "supports Draft 7 schema generation" do
+      schema =
+        Schema.define([
+          {:name, :string, [required: true]},
+          {:age, :integer, [optional: true]}
+        ])
+
+      json_schema = JsonSchema.generate(schema, draft: :draft7)
+
+      assert json_schema["$schema"] == "http://json-schema.org/draft-07/schema#"
+      assert json_schema["type"] == "object"
+      assert json_schema["properties"]["name"]["type"] == "string"
     end
 
     test "handles complex nested structures" do

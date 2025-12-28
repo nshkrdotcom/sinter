@@ -113,15 +113,17 @@ defmodule Sinter do
     # Combine explicit constraints with direct constraint options
     constraints = explicit_constraints ++ constraint_opts
 
+    temp_field = "__temp__"
+
     # Create temporary single-field schema
-    temp_schema = Schema.define([{:__temp__, type_spec, constraints}])
+    temp_schema = Schema.define([{temp_field, type_spec, constraints}])
 
     case Validator.validate(
            temp_schema,
-           %{__temp__: value},
+           %{temp_field => value},
            Keyword.delete(validation_only_opts, :constraints)
          ) do
-      {:ok, %{__temp__: validated_value}} ->
+      {:ok, %{^temp_field => validated_value}} ->
         {:ok, validated_value}
 
       {:error, errors} ->
@@ -129,7 +131,7 @@ defmodule Sinter do
         fixed_errors =
           Enum.map(errors, fn error ->
             case error.path do
-              [:__temp__ | rest] -> %{error | path: rest}
+              [^temp_field | rest] -> %{error | path: rest}
               path -> %{error | path: path}
             end
           end)
@@ -173,15 +175,17 @@ defmodule Sinter do
     # Combine explicit constraints with direct constraint options
     constraints = explicit_constraints ++ constraint_opts
 
+    field_key = normalize_field_name(field_name)
+
     # Create temporary schema with named field
-    temp_schema = Schema.define([{field_name, type_spec, constraints}])
+    temp_schema = Schema.define([{field_key, type_spec, constraints}])
 
     case Validator.validate(
            temp_schema,
-           %{field_name => value},
+           %{field_key => value},
            Keyword.delete(validation_only_opts, :constraints)
          ) do
-      {:ok, validated_map} -> {:ok, Map.get(validated_map, field_name)}
+      {:ok, validated_map} -> {:ok, Map.get(validated_map, field_key)}
       {:error, errors} -> {:error, errors}
     end
   end
@@ -375,16 +379,18 @@ defmodule Sinter do
     min_occurrence_ratio = Keyword.get(opts, :min_occurrence_ratio, 0.8)
     example_count = length(examples)
 
+    normalized_examples = Enum.map(examples, &normalize_example/1)
+
     # Step 1: Discover all field names
     all_field_names =
-      examples
+      normalized_examples
       |> Enum.flat_map(&Map.keys/1)
       |> Enum.uniq()
 
     # Step 2: Analyze each field
     field_specs =
       Enum.map(all_field_names, fn field_name ->
-        analyze_field(field_name, examples, example_count, min_occurrence_ratio)
+        analyze_field(field_name, normalized_examples, example_count, min_occurrence_ratio)
       end)
 
     # Step 3: Create schema with inferred fields
@@ -461,12 +467,9 @@ defmodule Sinter do
   # ============================================================================
 
   # Analyzes a single field across all examples to determine its specification
-  @spec analyze_field(String.t() | atom(), [map()], integer(), float()) ::
-          {atom(), Sinter.Types.type_spec(), keyword()}
+  @spec analyze_field(String.t(), [map()], integer(), float()) ::
+          {String.t(), Sinter.Types.type_spec(), keyword()}
   defp analyze_field(field_name, examples, example_count, min_occurrence_ratio) do
-    # Normalize field name to atom
-    field_atom = if is_binary(field_name), do: String.to_atom(field_name), else: field_name
-
     # Extract all values for this field
     field_values =
       examples
@@ -485,7 +488,7 @@ defmodule Sinter do
     # Build field options
     field_opts = [required: required]
 
-    {field_atom, inferred_type, field_opts}
+    {field_name, inferred_type, field_opts}
   end
 
   # Infers the type of a field from its values
@@ -551,7 +554,12 @@ defmodule Sinter do
 
     opts = if field_def.description, do: [description: field_def.description] ++ opts, else: opts
     opts = if field_def.example, do: [example: field_def.example] ++ opts, else: opts
-    opts = if field_def.default, do: [default: field_def.default] ++ opts, else: opts
+
+    opts =
+      case field_def.default do
+        nil -> opts
+        default -> [default: default] ++ opts
+      end
 
     # Add constraints
     field_def.constraints ++ opts
@@ -596,4 +604,22 @@ defmodule Sinter do
       value -> value
     end
   end
+
+  defp normalize_example(%_{} = struct) do
+    struct
+    |> Map.from_struct()
+    |> normalize_example()
+  end
+
+  defp normalize_example(example) when is_map(example) do
+    Enum.reduce(example, %{}, fn {key, value}, acc ->
+      Map.put(acc, normalize_field_name(key), value)
+    end)
+  end
+
+  defp normalize_example(example), do: example
+
+  defp normalize_field_name(name) when is_atom(name), do: Atom.to_string(name)
+  defp normalize_field_name(name) when is_binary(name), do: name
+  defp normalize_field_name(name), do: to_string(name)
 end

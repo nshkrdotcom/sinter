@@ -24,9 +24,9 @@ defmodule Sinter.Integration.DSPExTest do
       new_llm_output = %{"name" => "Diana", "age" => 28, "score" => 88.7}
 
       assert {:ok, validated} = Validator.validate(optimized_schema, new_llm_output)
-      assert validated[:name] == "Diana"
-      assert validated[:age] == 28
-      assert validated[:score] == 88.7
+      assert validated["name"] == "Diana"
+      assert validated["age"] == 28
+      assert validated["score"] == 88.7
 
       # Verify JSON Schema is LLM-ready
       assert openai_schema["additionalProperties"] == false
@@ -63,9 +63,9 @@ defmodule Sinter.Integration.DSPExTest do
       }
 
       assert {:ok, validated} = Validator.validate(program_schema, program_data)
-      assert validated[:query] == "What is the capital of France?"
-      assert validated[:answer] == "Paris"
-      assert validated[:confidence] == 0.95
+      assert validated["query"] == "What is the capital of France?"
+      assert validated["answer"] == "Paris"
+      assert validated["confidence"] == 0.95
     end
 
     test "batch optimization with streaming validation" do
@@ -114,8 +114,8 @@ defmodule Sinter.Integration.DSPExTest do
         end)
 
       # Verify context is available for debugging
-      name_error = Enum.find(enhanced_errors, &(&1.path == [:name]))
-      email_error = Enum.find(enhanced_errors, &(&1.path == [:email]))
+      name_error = Enum.find(enhanced_errors, &(&1.path == ["name"]))
+      email_error = Enum.find(enhanced_errors, &(&1.path == ["email"]))
 
       assert name_error.context.llm_response == bad_llm_response
       assert name_error.context.prompt == original_prompt

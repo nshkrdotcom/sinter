@@ -1,7 +1,7 @@
 defmodule Sinter.MixProject do
   use Mix.Project
 
-  @version "0.0.1"
+  @version "0.1.0"
   @source_url "https://github.com/nshkrdotcom/sinter"
 
   def project do
@@ -51,8 +51,10 @@ defmodule Sinter.MixProject do
       # Gift libraries (as specified in design docs)
       # Fast JSON parsing - the blazing fast gift library
       #      {:simdjsone, "~> 0.5.0"},
-      # JSON Schema validation engine - the heavy lifting gift library
-      #      {:ex_json_schema, "~> 0.10.2"},
+      # JSON Schema validation engine
+      {:jsv, "~> 0.13.1"},
+      # Options validation
+      {:nimble_options, "~> 1.0"},
       #      # Struct transformation library - for client app transformations
       #      {:estructura, "~> 1.9.0"},
 
@@ -94,6 +96,7 @@ defmodule Sinter.MixProject do
       },
       files: ~w[
         lib
+        assets
         priv
         mix.exs
         README.md
@@ -109,6 +112,8 @@ defmodule Sinter.MixProject do
       source_ref: "v#{@version}",
       source_url: @source_url,
       formatters: ["html"],
+      assets: %{"assets" => "assets"},
+      logo: "assets/sinter.svg",
       extras: [
         "README.md",
         "CHANGELOG.md",
@@ -121,17 +126,21 @@ defmodule Sinter.MixProject do
           Sinter,
           Sinter.Schema,
           Sinter.Validator,
-          Sinter.JsonSchema
+          Sinter.JsonSchema,
+          Sinter.JSON
+        ],
+        Serialization: [
+          Sinter.Transform,
+          Sinter.NotGiven
         ],
         "Types and Errors": [
           Sinter.Types,
           Sinter.Error,
           Sinter.ValidationError
         ],
-        Internals: [
-          Sinter.Schema.Compiler,
-          Sinter.Validator.Engine,
-          Sinter.JsonSchema.Generator
+        Integrations: [
+          Sinter.DSPEx,
+          Sinter.Performance
         ]
       ]
     ]
