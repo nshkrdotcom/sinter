@@ -502,4 +502,51 @@ defmodule Sinter.TypesTest do
       assert error.path == [1, 0]
     end
   end
+
+  describe "validate/3 - literal type" do
+    test "validates exact string match" do
+      assert {:ok, "sample"} = Types.validate({:literal, "sample"}, "sample", [])
+    end
+
+    test "rejects non-matching string" do
+      errors = assert_invalid(Types.validate({:literal, "sample"}, "other", []))
+      assert_error_with_code(errors, :literal_mismatch)
+    end
+
+    test "validates exact atom match" do
+      assert {:ok, :foo} = Types.validate({:literal, :foo}, :foo, [])
+    end
+
+    test "validates exact integer match" do
+      assert {:ok, 42} = Types.validate({:literal, 42}, 42, [])
+    end
+
+    test "rejects type mismatch even with same representation" do
+      errors = assert_invalid(Types.validate({:literal, "42"}, 42, []))
+      assert_error_with_code(errors, :literal_mismatch)
+    end
+
+    test "returns meaningful error message" do
+      {:error, [error]} = Types.validate({:literal, "expected"}, "actual", [])
+      assert error.code == :literal_mismatch
+      assert error.message =~ "expected"
+    end
+  end
+
+  describe "to_json_schema/1 - literal type" do
+    test "generates const for literal string" do
+      schema = Types.to_json_schema({:literal, "sample"})
+      assert schema == %{"const" => "sample"}
+    end
+
+    test "generates const for literal integer" do
+      schema = Types.to_json_schema({:literal, 42})
+      assert schema == %{"const" => 42}
+    end
+
+    test "generates const for literal boolean" do
+      schema = Types.to_json_schema({:literal, true})
+      assert schema == %{"const" => true}
+    end
+  end
 end

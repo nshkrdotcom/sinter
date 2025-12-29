@@ -214,7 +214,9 @@ defmodule Sinter.JsonSchema do
     schema.fields
     |> Enum.map(fn {field_name, field_def} ->
       property_schema = build_property_schema(field_def, include_descriptions, opts)
-      {to_string(field_name), property_schema}
+      # Use alias if present, otherwise canonical name
+      prop_name = field_def.alias || to_string(field_name)
+      {prop_name, property_schema}
     end)
     |> Map.new()
   end
@@ -366,9 +368,12 @@ defmodule Sinter.JsonSchema do
 
   @spec build_required_list(Schema.t()) :: [String.t()]
   defp build_required_list(schema) do
-    schema
-    |> Schema.required_fields()
-    |> Enum.map(&to_string/1)
+    schema.fields
+    |> Enum.filter(fn {_name, field_def} -> field_def.required end)
+    |> Enum.map(fn {field_name, field_def} ->
+      # Use alias if present, otherwise canonical name
+      field_def.alias || to_string(field_name)
+    end)
   end
 
   @spec apply_provider_optimizations(map(), atom()) :: map()

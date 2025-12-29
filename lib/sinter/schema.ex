@@ -70,14 +70,17 @@ defmodule Sinter.Schema do
           constraints: keyword(),
           description: String.t() | nil,
           example: term() | nil,
-          default: term() | nil
+          default: term() | nil,
+          validate: function() | [function()] | nil,
+          alias: String.t() | nil
         }
 
   @type config :: %{
           title: String.t() | nil,
           description: String.t() | nil,
           strict: boolean(),
-          post_validate: function() | nil
+          post_validate: function() | nil,
+          pre_validate: function() | nil
         }
 
   @type metadata :: %{
@@ -112,6 +115,10 @@ defmodule Sinter.Schema do
                        lteq: [type: {:or, [:integer, :float]}],
                        format: [type: :any],
                        choices: [type: {:list, :any}],
+                       # Custom field validator function(s) - single function or list
+                       validate: [type: :any],
+                       # Field alias for JSON serialization (e.g., "accountName" for :account_name)
+                       alias: [type: :string],
                        # DSPEx metadata for field classification
                        dspex_field_type: [type: :atom]
                      )
@@ -349,6 +356,41 @@ defmodule Sinter.Schema do
   def post_validate_fn(%__MODULE__{config: %{post_validate: fun}}), do: fun
 
   @doc """
+  Returns the pre-validation function if defined.
+
+  ## Examples
+
+      iex> pre_fn = fn data -> Map.put(data, "extra", "value") end
+      iex> schema = Sinter.Schema.define([], pre_validate: pre_fn)
+      iex> Sinter.Schema.pre_validate_fn(schema)
+      #Function<...>
+  """
+  @spec pre_validate_fn(t()) :: function() | nil
+  def pre_validate_fn(%__MODULE__{config: %{pre_validate: fun}}), do: fun
+
+  @doc """
+  Returns a map of canonical field names to their aliases.
+
+  Only includes fields that have aliases defined.
+
+  ## Examples
+
+      iex> schema = Sinter.Schema.define([
+      ...>   {:account_name, :string, [alias: "accountName"]},
+      ...>   {:no_alias, :string, []}
+      ...> ])
+      iex> Sinter.Schema.field_aliases(schema)
+      %{"account_name" => "accountName"}
+  """
+  @spec field_aliases(t()) :: %{String.t() => String.t()}
+  def field_aliases(%__MODULE__{fields: fields}) do
+    fields
+    |> Enum.filter(fn {_name, field_def} -> not is_nil(field_def.alias) end)
+    |> Enum.map(fn {name, field_def} -> {name, field_def.alias} end)
+    |> Map.new()
+  end
+
+  @doc """
   Returns summary information about the schema.
 
   ## Examples
@@ -448,6 +490,35 @@ defmodule Sinter.Schema do
     :ok
   end
 
+  defp validate_type_spec({:literal, _value}), do: :ok
+
+  defp validate_type_spec({:discriminated_union, opts}) when is_list(opts) do
+    # Validate that required options are present
+    unless Keyword.has_key?(opts, :discriminator) do
+      raise ArgumentError, "discriminated_union requires :discriminator option"
+    end
+
+    unless Keyword.has_key?(opts, :variants) do
+      raise ArgumentError, "discriminated_union requires :variants option"
+    end
+
+    variants = Keyword.fetch!(opts, :variants)
+
+    unless is_map(variants) do
+      raise ArgumentError, "discriminated_union :variants must be a map"
+    end
+
+    # Validate each variant schema
+    Enum.each(variants, fn {_key, schema} ->
+      case schema do
+        %__MODULE__{} -> :ok
+        _ -> raise ArgumentError, "discriminated_union variant must be a Schema.t()"
+      end
+    end)
+
+    :ok
+  end
+
   defp validate_type_spec(invalid) do
     raise ArgumentError, "Invalid type specification: #{inspect(invalid)}"
   end
@@ -483,7 +554,9 @@ defmodule Sinter.Schema do
       constraints: constraints,
       description: Keyword.get(opts, :description),
       example: Keyword.get(opts, :example),
-      default: Keyword.get(opts, :default)
+      default: Keyword.get(opts, :default),
+      validate: Keyword.get(opts, :validate),
+      alias: Keyword.get(opts, :alias)
     }
   end
 
@@ -538,11 +611,24 @@ defmodule Sinter.Schema do
         raise ArgumentError, "post_validate must be a function/1, got: #{inspect(invalid)}"
     end
 
+    # Validate pre_validate function if provided
+    case Keyword.get(opts, :pre_validate) do
+      nil ->
+        :ok
+
+      fun when is_function(fun, 1) ->
+        :ok
+
+      invalid ->
+        raise ArgumentError, "pre_validate must be a function/1, got: #{inspect(invalid)}"
+    end
+
     %{
       title: Keyword.get(opts, :title),
       description: Keyword.get(opts, :description),
       strict: Keyword.get(opts, :strict, false),
-      post_validate: Keyword.get(opts, :post_validate)
+      post_validate: Keyword.get(opts, :post_validate),
+      pre_validate: Keyword.get(opts, :pre_validate)
     }
   end
 

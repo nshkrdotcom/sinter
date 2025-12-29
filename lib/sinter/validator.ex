@@ -86,13 +86,21 @@ defmodule Sinter.Validator do
   @spec validate(Schema.t(), map(), validation_opts()) :: validation_result()
   def validate(%Schema{} = schema, data, opts \\ []) do
     path = Keyword.get(opts, :path, [])
-    normalized_data = normalize_input(data)
 
-    with :ok <- validate_input_format(normalized_data, path),
-         {:ok, validated_fields} <- validate_fields(schema, normalized_data, opts),
-         :ok <- validate_strict_mode(schema, validated_fields, normalized_data, opts),
-         {:ok, final_data} <- apply_post_validation(schema, validated_fields, path) do
-      {:ok, final_data}
+    # First apply pre-validation transformation
+    case apply_pre_validation(schema, data, path) do
+      {:error, _} = error ->
+        error
+
+      {:ok, pre_validated_data} ->
+        normalized_data = normalize_input(pre_validated_data)
+
+        with :ok <- validate_input_format(normalized_data, path),
+             {:ok, validated_fields} <- validate_fields(schema, normalized_data, opts),
+             :ok <- validate_strict_mode(schema, validated_fields, normalized_data, opts),
+             {:ok, final_data} <- apply_post_validation(schema, validated_fields, path) do
+          {:ok, final_data}
+        end
     end
   end
 
@@ -210,7 +218,8 @@ defmodule Sinter.Validator do
           {String.t(), {:ok, term()} | {:error, [Error.t()]} | :skip}
   defp validate_single_field(field_name, field_def, data, base_path, coerce) do
     field_path = base_path ++ [field_name]
-    field_value = get_field_value(data, field_name)
+    # Get field value, checking alias first if present
+    field_value = get_field_value_with_alias(data, field_name, field_def.alias)
 
     case {field_value, field_def} do
       # Field missing but has default
@@ -230,6 +239,26 @@ defmodule Sinter.Validator do
       {value, field_def} ->
         result = validate_field_value(field_def, value, field_path, coerce)
         {field_name, result}
+    end
+  end
+
+  @spec get_field_value_with_alias(map(), String.t(), String.t() | nil) :: term() | :missing
+  defp get_field_value_with_alias(data, field_name, nil) do
+    # No alias - just check the field name
+    get_field_value(data, field_name)
+  end
+
+  defp get_field_value_with_alias(data, field_name, field_alias) do
+    # Check alias first (takes precedence), then canonical name
+    cond do
+      Map.has_key?(data, field_alias) ->
+        Map.get(data, field_alias)
+
+      Map.has_key?(data, field_name) ->
+        Map.get(data, field_name)
+
+      true ->
+        :missing
     end
   end
 
@@ -315,13 +344,67 @@ defmodule Sinter.Validator do
       {:ok, validated_value} ->
         # Then validate constraints
         case validate_constraints(field_def.constraints, validated_value, path) do
-          :ok -> {:ok, validated_value}
-          {:error, errors} -> {:error, errors}
+          :ok ->
+            # Finally apply custom field validators if present
+            apply_field_validators(validated_value, field_def, path)
+
+          {:error, errors} ->
+            {:error, errors}
         end
 
       {:error, errors} ->
         {:error, List.wrap(errors)}
     end
+  end
+
+  @spec apply_field_validators(term(), Schema.field_definition(), [atom() | String.t() | integer()]) ::
+          {:ok, term()} | {:error, [Error.t()]}
+  defp apply_field_validators(value, field_def, path) do
+    case Map.get(field_def, :validate) do
+      nil ->
+        {:ok, value}
+
+      validators when is_list(validators) ->
+        Enum.reduce_while(validators, {:ok, value}, fn validator, {:ok, val} ->
+          case apply_single_validator(validator, val, path) do
+            {:ok, new_val} -> {:cont, {:ok, new_val}}
+            {:error, _} = err -> {:halt, err}
+          end
+        end)
+
+      validator when is_function(validator, 1) ->
+        apply_single_validator(validator, value, path)
+    end
+  end
+
+  @spec apply_single_validator(function(), term(), [atom() | String.t() | integer()]) ::
+          {:ok, term()} | {:error, [Error.t()]}
+  defp apply_single_validator(validator, value, path) do
+    case validator.(value) do
+      :ok ->
+        {:ok, value}
+
+      {:ok, new_value} ->
+        {:ok, new_value}
+
+      {:error, message} when is_binary(message) ->
+        error = Error.new(path, :custom_validation, message, %{value: value})
+        {:error, [error]}
+
+      {:error, %Error{} = error} ->
+        {:error, [%{error | path: path}]}
+    end
+  rescue
+    e ->
+      error =
+        Error.new(
+          path,
+          :custom_validation_error,
+          "field validator raised: #{Exception.message(e)}",
+          %{exception: e, value: value}
+        )
+
+      {:error, [error]}
   end
 
   @spec validate_constraints(keyword(), term(), [atom() | String.t() | integer()]) ::
@@ -521,6 +604,31 @@ defmodule Sinter.Validator do
                 path,
                 :post_validation,
                 "Post-validation function failed: #{Exception.message(e)}"
+              )
+
+            {:error, [error]}
+        end
+    end
+  end
+
+  @spec apply_pre_validation(Schema.t(), term(), [atom() | String.t() | integer()]) ::
+          {:ok, term()} | {:error, [Error.t()]}
+  defp apply_pre_validation(schema, data, path) do
+    case Schema.pre_validate_fn(schema) do
+      nil ->
+        {:ok, data}
+
+      pre_validate_fn when is_function(pre_validate_fn, 1) ->
+        try do
+          {:ok, pre_validate_fn.(data)}
+        rescue
+          e ->
+            error =
+              Error.new(
+                path,
+                :pre_validate_error,
+                "pre_validate function raised: #{Exception.message(e)}",
+                %{exception: e}
               )
 
             {:error, [error]}

@@ -58,6 +58,8 @@ defmodule Sinter.Types do
           | {:map, type_spec(), type_spec()}
           | {:nullable, type_spec()}
           | {:object, Schema.t() | [Schema.field_spec()]}
+          | {:literal, term()}
+          | {:discriminated_union, keyword()}
 
   @type type_spec :: primitive_type() | composite_type()
 
@@ -118,6 +120,22 @@ defmodule Sinter.Types do
   def validate(:any, value, _path), do: {:ok, value}
   def validate(:map, value, _path) when is_map(value), do: {:ok, value}
   def validate(:null, nil, _path), do: {:ok, nil}
+
+  # Literal type validation - exact value match
+  def validate({:literal, expected}, value, _path) when value === expected do
+    {:ok, value}
+  end
+
+  def validate({:literal, expected}, value, path) do
+    error =
+      Error.new(
+        path,
+        :literal_mismatch,
+        "expected literal #{inspect(expected)}, got #{inspect(value)}"
+      )
+
+    {:error, [error]}
+  end
 
   def validate(:date, value, path) when is_binary(value) do
     case Date.from_iso8601(value) do
@@ -302,6 +320,56 @@ defmodule Sinter.Types do
 
   def validate({:object, _schema}, value, path) do
     error = Error.new(path, :type, "expected object, got #{type_name(value)}")
+    {:error, [error]}
+  end
+
+  # Discriminated union validation - uses discriminator field to select variant
+  def validate({:discriminated_union, opts}, value, path) when is_map(value) do
+    discriminator = Keyword.fetch!(opts, :discriminator)
+    variants = Keyword.fetch!(opts, :variants)
+
+    # Get discriminator value (support both string and atom keys)
+    disc_value = get_discriminator_value(value, discriminator)
+
+    case disc_value do
+      nil ->
+        error =
+          Error.new(
+            path ++ [to_string(discriminator)],
+            :missing_discriminator,
+            "missing discriminator field '#{discriminator}'",
+            %{discriminator: discriminator}
+          )
+
+        {:error, [error]}
+
+      disc_val ->
+        # Look up variant schema - try exact match first, then string conversion
+        variant_schema = find_variant_schema(variants, disc_val)
+
+        case variant_schema do
+          nil ->
+            valid_values = Map.keys(variants)
+
+            error =
+              Error.new(
+                path ++ [to_string(discriminator)],
+                :unknown_discriminator,
+                "unknown discriminator value '#{disc_val}', expected one of: #{inspect(valid_values)}",
+                %{value: disc_val, valid_values: valid_values}
+              )
+
+            {:error, [error]}
+
+          schema ->
+            # Validate against the variant schema
+            Validator.validate(schema, value, path: path)
+        end
+    end
+  end
+
+  def validate({:discriminated_union, _opts}, value, path) do
+    error = Error.new(path, :type, "expected map for discriminated union, got #{type_name(value)}")
     {:error, [error]}
   end
 
@@ -601,6 +669,34 @@ defmodule Sinter.Types do
     %{"type" => "object"}
   end
 
+  def to_json_schema({:literal, value}) do
+    %{"const" => value}
+  end
+
+  def to_json_schema({:discriminated_union, opts}) do
+    discriminator = Keyword.fetch!(opts, :discriminator)
+    variants = Keyword.fetch!(opts, :variants)
+
+    variant_schemas =
+      Enum.map(variants, fn {_key, schema} ->
+        generate_variant_json_schema(schema)
+      end)
+
+    mapping =
+      Enum.map(variants, fn {key, _schema} ->
+        {to_string(key), "#/definitions/#{key}"}
+      end)
+      |> Map.new()
+
+    %{
+      "oneOf" => variant_schemas,
+      "discriminator" => %{
+        "propertyName" => to_string(discriminator),
+        "mapping" => mapping
+      }
+    }
+  end
+
   # Private helper functions
 
   @spec validate_array_constraints(keyword(), [term()], [atom() | String.t() | integer()]) ::
@@ -684,4 +780,81 @@ defmodule Sinter.Types do
 
   defp normalize_object_schema(field_specs) when is_list(field_specs),
     do: Schema.define(field_specs)
+
+  # Helper to get discriminator value from map with support for both string and atom keys
+  @spec get_discriminator_value(map(), atom() | String.t()) :: term() | nil
+  defp get_discriminator_value(map, discriminator) when is_binary(discriminator) do
+    case Map.get(map, discriminator) do
+      nil ->
+        # Try atom key
+        try do
+          Map.get(map, String.to_existing_atom(discriminator))
+        rescue
+          ArgumentError -> nil
+        end
+
+      value ->
+        value
+    end
+  end
+
+  defp get_discriminator_value(map, discriminator) when is_atom(discriminator) do
+    case Map.get(map, discriminator) do
+      nil -> Map.get(map, to_string(discriminator))
+      value -> value
+    end
+  end
+
+  # Helper to find variant schema by discriminator value
+  @spec find_variant_schema(map(), term()) :: Schema.t() | nil
+  defp find_variant_schema(variants, disc_val) do
+    # Try exact match first
+    case Map.get(variants, disc_val) do
+      nil -> find_variant_by_conversion(variants, disc_val)
+      schema -> schema
+    end
+  end
+
+  defp find_variant_by_conversion(variants, disc_val) when is_atom(disc_val) do
+    Map.get(variants, to_string(disc_val))
+  end
+
+  defp find_variant_by_conversion(variants, disc_val) when is_binary(disc_val) do
+    # Try to find an atom key that matches the string
+    Enum.find_value(variants, fn
+      {key, schema} when is_atom(key) ->
+        if to_string(key) == disc_val, do: schema
+
+      _ ->
+        nil
+    end)
+  end
+
+  defp find_variant_by_conversion(_variants, _disc_val), do: nil
+
+  # Helper to generate JSON Schema for a variant (simplified version)
+  @spec generate_variant_json_schema(Schema.t()) :: map()
+  defp generate_variant_json_schema(%Schema{} = schema) do
+    properties =
+      Enum.map(schema.fields, fn {name, field_def} ->
+        {to_string(name), to_json_schema(field_def.type)}
+      end)
+      |> Map.new()
+
+    required =
+      schema.fields
+      |> Enum.filter(fn {_name, field_def} -> field_def.required end)
+      |> Enum.map(fn {name, _} -> to_string(name) end)
+
+    base = %{
+      "type" => "object",
+      "properties" => properties
+    }
+
+    if required == [] do
+      base
+    else
+      Map.put(base, "required", required)
+    end
+  end
 end

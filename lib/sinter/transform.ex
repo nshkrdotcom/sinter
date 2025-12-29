@@ -9,11 +9,15 @@ defmodule Sinter.Transform do
 
   alias Sinter.NotGiven
 
+  alias Sinter.Schema
+
   @type format :: :iso8601 | (term() -> term())
   @type opts :: [
           aliases: map(),
           formats: map(),
-          drop_nil?: boolean()
+          drop_nil?: boolean(),
+          schema: Schema.t() | nil,
+          use_aliases: boolean()
         ]
 
   @doc """
@@ -22,6 +26,14 @@ defmodule Sinter.Transform do
   - Keys are stringified and alias mappings are applied
   - `NotGiven`/`omit` sentinels are removed
   - Optional formatters can be attached per key (`:iso8601` or a unary function)
+
+  ## Options
+
+    * `:aliases` - Map of canonical keys to alias keys
+    * `:formats` - Map of keys to formatters
+    * `:drop_nil?` - Whether to drop nil values (default: false)
+    * `:schema` - A Sinter.Schema to extract aliases from
+    * `:use_aliases` - Whether to use aliases from schema (default: false)
   """
   @spec transform(term(), opts()) :: term()
   def transform(data, opts \\ [])
@@ -46,7 +58,8 @@ defmodule Sinter.Transform do
   def transform(other, _opts), do: other
 
   defp transform_map(map, opts) do
-    aliases = Keyword.get(opts, :aliases, %{})
+    # Build aliases map - either from explicit option or from schema
+    aliases = build_aliases(opts)
     formats = Keyword.get(opts, :formats, %{})
     drop_nil? = Keyword.get(opts, :drop_nil?, false)
 
@@ -64,6 +77,22 @@ defmodule Sinter.Transform do
           Map.put(acc, encoded_key, formatted_value)
       end
     end)
+  end
+
+  defp build_aliases(opts) do
+    explicit_aliases = Keyword.get(opts, :aliases, %{})
+    schema = Keyword.get(opts, :schema)
+    use_aliases = Keyword.get(opts, :use_aliases, false)
+
+    schema_aliases =
+      if schema && use_aliases do
+        Schema.field_aliases(schema)
+      else
+        %{}
+      end
+
+    # Merge explicit aliases on top of schema aliases
+    Map.merge(schema_aliases, explicit_aliases)
   end
 
   defp transform_value(value, key, formats, opts) do
