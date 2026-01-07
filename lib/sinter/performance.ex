@@ -184,7 +184,7 @@ defmodule Sinter.Performance do
       |> Enum.map(fn {name, _} -> name end)
 
     recommendations =
-      if length(complex_fields) > 0 do
+      if complex_fields != [] do
         ["Consider simplifying complex fields: #{inspect(complex_fields)}" | recommendations]
       else
         recommendations

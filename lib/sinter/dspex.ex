@@ -325,7 +325,7 @@ defmodule Sinter.DSPEx do
 
     # Extra fields suggestions
     suggestions =
-      if length(patterns.common_extra_fields) > 0 do
+      if patterns.common_extra_fields != [] do
         fields = patterns.common_extra_fields |> Enum.join(", ")
         ["Consider adding common extra fields as optional: #{fields}" | suggestions]
       else

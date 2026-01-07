@@ -119,7 +119,7 @@ defmodule Sinter.DiscriminatedUnionTest do
       data = %{"type" => "encoded_text"}
 
       assert {:error, errors} = Types.validate(union_type, data, [])
-      assert length(errors) > 0
+      assert errors != []
       # Should report the missing tokens field
       assert Enum.any?(errors, fn e -> e.message =~ "tokens" or e.message =~ "required" end)
     end
