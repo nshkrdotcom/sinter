@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-03-12
+
+### Added
+- **Discriminated unions** — new `:discriminated_union` type selects a schema variant based on a discriminator field value, for polymorphic JSON APIs.
+- **Literal type** — new `:literal` type for exact value matching.
+- **Field aliases** — `:alias` option on field definitions maps canonical Elixir keys to different external string keys; the validator checks both names and the transform module can output aliased keys.
+- **Pre-validate hook** — schema-level `:pre_validate` function transforms raw input before standard validation begins.
+- **Per-field validators** — `:validate` option runs custom functions after type checks for field-level logic and transformation.
+- JSON Schema generation now emits `oneOf` with discriminator mappings and supports property name overrides for aliases.
+- New test suites for discriminated unions, field aliases, field validators, and pre-validate hooks.
+
+### Changed
+- Added comprehensive documentation guides (getting started, schema definition, validation, JSON schema, JSON serialization, DSPEx integration).
+- Enhanced ExDoc configuration with grouped extras, module categories, and additional output formatters.
+- Upgraded `jsv` dependency from `~> 0.13.1` to `~> 0.16.0`.
+- Upgraded `nimble_options` from `~> 1.0` to `~> 1.1`.
+- Upgraded `ex_doc` from `~> 0.34` to `~> 0.40.1`.
+- Upgraded `stream_data` from `~> 1.1` to `~> 1.3`, `mix_test_watch` to `~> 1.4`, `excoveralls` to `~> 0.18.5`, `benchee` to `~> 1.5`.
+- Updated `credo`, `dialyxir`, and supporting libraries to latest stable releases.
+- Added `castore` as a test-only dependency for certificate handling.
+- Replaced `length(list) > 0` with `list != []` for O(1) emptiness checks in `dspex.ex` and `performance.ex`.
+- Moved `preferred_cli_env` settings into a dedicated `cli/0` function in `mix.exs` following current Elixir best practices.
+
 ## [0.1.0] - 2025-12-27
 
 ### Added
@@ -52,6 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Full test coverage
 - Documentation and API reference
 
+[0.2.0]: https://github.com/nshkrdotcom/sinter/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nshkrdotcom/sinter/releases/tag/v0.1.0
 [0.0.2]: https://github.com/nshkrdotcom/sinter/releases/tag/v0.0.2
 [0.0.1]: https://github.com/nshkrdotcom/sinter/releases/tag/v0.0.1

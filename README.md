@@ -6,6 +6,9 @@
 
 **Unified schema definition, validation, and JSON Schema for Elixir**
 
+[![Hex.pm](https://img.shields.io/hexpm/v/sinter.svg)](https://hex.pm/packages/sinter)
+[![Docs](https://img.shields.io/badge/hex-docs-blue.svg)](https://hexdocs.pm/sinter)
+[![License](https://img.shields.io/hexpm/l/sinter.svg)](https://github.com/nshkrdotcom/sinter/blob/main/LICENSE)
 [![CI](https://github.com/nshkrdotcom/sinter/actions/workflows/ci.yml/badge.svg)](https://github.com/nshkrdotcom/sinter/actions/workflows/ci.yml)
 
 Sinter is a runtime-first schema library for JSON-shaped data. Schemas are defined once and used for
@@ -27,7 +30,7 @@ Add `sinter` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:sinter, "~> 0.1.0"}
+    {:sinter, "~> 0.2.0"}
   ]
 end
 ```

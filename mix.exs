@@ -1,7 +1,7 @@
 defmodule Sinter.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
   @source_url "https://github.com/nshkrdotcom/sinter"
 
   def project do
@@ -57,9 +57,9 @@ defmodule Sinter.MixProject do
       # Fast JSON parsing - the blazing fast gift library
       #      {:simdjsone, "~> 0.5.0"},
       # JSON Schema validation engine
-      {:jsv, "~> 0.15.0"},
+      {:jsv, "~> 0.16.0"},
       # Options validation
-      {:nimble_options, "~> 1.0"},
+      {:nimble_options, "~> 1.1"},
       #      # Struct transformation library - for client app transformations
       #      {:estructura, "~> 1.9.0"},
 
@@ -67,15 +67,15 @@ defmodule Sinter.MixProject do
       {:jason, "~> 1.4"},
 
       # Development and testing dependencies
-      {:ex_doc, "~> 0.39", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.40.1", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:castore, "~> 1.0", only: :test},
-      {:excoveralls, "~> 0.18", only: :test},
-      {:mix_test_watch, "~> 1.0", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.18.5", only: :test},
+      {:mix_test_watch, "~> 1.4", only: [:dev, :test], runtime: false},
 
       # Property testing and benchmarking
-      {:stream_data, "~> 1.1", only: [:dev, :test]},
+      {:stream_data, "~> 1.3", only: [:dev, :test]},
       {:benchee, "~> 1.5", only: :dev}
     ]
   end
@@ -102,8 +102,6 @@ defmodule Sinter.MixProject do
       },
       files: ~w[
         lib
-        assets
-        priv
         mix.exs
         README.md
         CHANGELOG.md
@@ -117,29 +115,54 @@ defmodule Sinter.MixProject do
       main: "readme",
       source_ref: "v#{@version}",
       source_url: @source_url,
-      formatters: ["html"],
+      formatters: ["html", "epub", "markdown"],
       assets: %{"assets" => "assets"},
       logo: "assets/sinter.svg",
       extras: [
         "README.md",
+        "guides/getting-started.md",
+        "guides/schema-definition.md",
+        "guides/validation.md",
+        "guides/json-schema.md",
+        "guides/json-serialization.md",
+        "guides/dspex-integration.md",
         "CHANGELOG.md",
         "LICENSE"
+      ],
+      groups_for_extras: [
+        "Getting Started": [
+          "README.md",
+          "guides/getting-started.md"
+        ],
+        Guides: [
+          "guides/schema-definition.md",
+          "guides/validation.md",
+          "guides/json-schema.md",
+          "guides/json-serialization.md"
+        ],
+        Integrations: [
+          "guides/dspex-integration.md"
+        ],
+        "Release Notes": [
+          "CHANGELOG.md",
+          "LICENSE"
+        ]
       ],
       before_closing_head_tag: &before_closing_head_tag/1,
       before_closing_body_tag: &before_closing_body_tag/1,
       groups_for_modules: [
-        Core: [
+        "Core API": [
           Sinter,
           Sinter.Schema,
-          Sinter.Validator,
-          Sinter.JsonSchema,
-          Sinter.JSON
+          Sinter.Validator
         ],
-        Serialization: [
+        "JSON & Serialization": [
+          Sinter.JsonSchema,
+          Sinter.JSON,
           Sinter.Transform,
           Sinter.NotGiven
         ],
-        "Types and Errors": [
+        "Types & Errors": [
           Sinter.Types,
           Sinter.Error,
           Sinter.ValidationError

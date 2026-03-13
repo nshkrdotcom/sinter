@@ -64,7 +64,6 @@
     </clipPath>
   </defs>
 
-  <rect width="200" height="200" fill="url(#bg)"/>
   <g filter="url(#softShadow)">
     <polygon points="100 8 180 52 180 148 100 192 20 148 20 52" fill="url(#hexFill)" stroke="url(#hexStroke)" stroke-width="6"/>
   </g>
