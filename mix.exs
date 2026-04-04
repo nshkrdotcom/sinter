@@ -102,6 +102,7 @@ defmodule Sinter.MixProject do
       },
       files: ~w[
         lib
+        assets
         mix.exs
         README.md
         CHANGELOG.md
