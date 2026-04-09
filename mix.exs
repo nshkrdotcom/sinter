@@ -107,6 +107,7 @@ defmodule Sinter.MixProject do
         README.md
         CHANGELOG.md
         LICENSE
+        guides
       ]
     ]
   end
