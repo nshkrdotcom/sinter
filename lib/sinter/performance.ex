@@ -148,7 +148,7 @@ defmodule Sinter.Performance do
 
   # Private helper functions
 
-  @spec calculate_field_complexity(Schema.field_definition()) :: number()
+  @spec calculate_field_complexity(Schema.field_definition()) :: float()
   defp calculate_field_complexity(field_def) do
     base_score = 1.0
 

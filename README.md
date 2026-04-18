@@ -19,6 +19,7 @@ atom leaks and to match JSON wire formats.
 
 - String-keyed schema fields by default (safe for untrusted input)
 - Nested object schemas with `Schema.object/1` and `{:object, ...}`
+- Discriminated unions with full JSON Schema branch fidelity
 - Dual JSON Schema drafts (2020-12 default, Draft 7 for providers)
 - JSON encode/decode helpers with aliasing and omit/nil handling
 - JSV-backed JSON Schema validation
@@ -30,7 +31,7 @@ Add `sinter` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:sinter, "~> 0.2.0"}
+    {:sinter, "~> 0.3.0"}
   ]
 end
 ```
@@ -146,6 +147,44 @@ openai_schema = Sinter.JsonSchema.for_provider(schema, :openai)
 json_schema = Sinter.JsonSchema.generate(schema, draft: :draft7)
 :ok = Sinter.JsonSchema.validate_schema(json_schema)
 ```
+
+### Discriminated Unions
+
+```elixir
+text_chunk =
+  Sinter.Schema.define([
+    {:type, {:literal, "text"}, [required: true]},
+    {:content, :string, [required: true, min_length: 1]}
+  ])
+
+image_chunk =
+  Sinter.Schema.define([
+    {:type, {:literal, "image"}, [required: true]},
+    {:url, :string, [required: true]},
+    {:alt, :string, [optional: true]}
+  ], strict: true)
+
+schema =
+  Sinter.Schema.define([
+    {:chunk,
+     {:discriminated_union,
+      [
+        discriminator: "type",
+        variants: %{
+          "text" => text_chunk,
+          "image" => image_chunk
+        }
+      ]}, [required: true]}
+  ])
+
+json_schema = Sinter.JsonSchema.generate(schema)
+chunk_schema = json_schema["properties"]["chunk"]
+```
+
+Generated discriminated-union schemas preserve each branch's nested properties,
+constraints, aliases, defaults, examples, and strictness. Sinter also emits
+definition targets for discriminator mappings so the generated schema remains
+self-consistent for downstream tooling.
 
 ## Convenience Helpers
 

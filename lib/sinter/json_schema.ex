@@ -113,6 +113,7 @@ defmodule Sinter.JsonSchema do
     # Build base JSON Schema
     base_schema =
       build_base_schema(schema, include_descriptions, builder_opts)
+      |> finalize_discriminated_unions(draft)
 
     # Apply provider optimizations
     optimized_schema = apply_provider_optimizations(base_schema, provider)
@@ -298,6 +299,24 @@ defmodule Sinter.JsonSchema do
     }
   end
 
+  defp build_type_schema({:discriminated_union, union_opts}, include_descriptions, opts) do
+    discriminator = Keyword.fetch!(union_opts, :discriminator)
+    variants = Keyword.fetch!(union_opts, :variants)
+
+    variant_definitions =
+      variants
+      |> Enum.map(fn {key, variant_schema} ->
+        {to_string(key),
+         build_union_variant_schema(variant_schema, discriminator, include_descriptions, opts)}
+      end)
+      |> Map.new()
+
+    %{
+      "discriminator" => %{"propertyName" => to_string(discriminator)},
+      "x-sinter-union-definitions" => variant_definitions
+    }
+  end
+
   defp build_type_schema({:object, %Schema{} = nested_schema}, include_descriptions, opts) do
     build_object_schema(nested_schema, include_descriptions, opts)
   end
@@ -328,6 +347,40 @@ defmodule Sinter.JsonSchema do
     base
     |> maybe_add_title(config.title)
     |> maybe_add_description(config.description, include_descriptions)
+  end
+
+  @spec build_union_variant_schema(Schema.t(), atom() | String.t(), boolean(), keyword()) :: map()
+  defp build_union_variant_schema(%Schema{} = schema, discriminator, include_descriptions, opts) do
+    schema
+    |> build_object_schema(include_descriptions, opts)
+    |> ensure_discriminator_required(schema, discriminator)
+  end
+
+  @spec ensure_discriminator_required(map(), Schema.t(), atom() | String.t()) :: map()
+  defp ensure_discriminator_required(json_schema, schema, discriminator) do
+    case discriminator_property_name(schema, discriminator) do
+      nil ->
+        json_schema
+
+      property_name ->
+        required =
+          json_schema
+          |> Map.get("required", [])
+          |> Kernel.++([property_name])
+          |> Enum.uniq()
+
+        Map.put(json_schema, "required", required)
+    end
+  end
+
+  @spec discriminator_property_name(Schema.t(), atom() | String.t()) :: String.t() | nil
+  defp discriminator_property_name(%Schema{} = schema, discriminator) do
+    discriminator_key = to_string(discriminator)
+
+    case Map.get(schema.fields, discriminator_key) do
+      nil -> nil
+      field_def -> field_def.alias || discriminator_key
+    end
   end
 
   @spec add_constraints(map(), keyword()) :: map()
@@ -423,21 +476,7 @@ defmodule Sinter.JsonSchema do
 
   @spec remove_unsupported_formats(map(), [String.t()]) :: map()
   defp remove_unsupported_formats(schema, unsupported_formats) do
-    case Map.get(schema, "properties") do
-      nil ->
-        schema
-
-      properties ->
-        cleaned_properties =
-          properties
-          |> Enum.map(fn {key, prop_schema} ->
-            cleaned_prop = remove_format_if_unsupported(prop_schema, unsupported_formats)
-            {key, cleaned_prop}
-          end)
-          |> Map.new()
-
-        Map.put(schema, "properties", cleaned_properties)
-    end
+    transform_schema(schema, &remove_format_if_unsupported(&1, unsupported_formats))
   end
 
   @spec remove_format_if_unsupported(map(), [String.t()]) :: map()
@@ -457,22 +496,7 @@ defmodule Sinter.JsonSchema do
 
   @spec simplify_complex_unions(map()) :: map()
   defp simplify_complex_unions(schema) do
-    # Simplify oneOf/anyOf with more than 3 options
-    case Map.get(schema, "properties") do
-      nil ->
-        schema
-
-      properties ->
-        simplified_properties =
-          properties
-          |> Enum.map(fn {key, prop_schema} ->
-            simplified_prop = simplify_union_property(prop_schema)
-            {key, simplified_prop}
-          end)
-          |> Map.new()
-
-        Map.put(schema, "properties", simplified_properties)
-    end
+    transform_schema(schema, &simplify_union_property/1)
   end
 
   @spec simplify_union_property(map()) :: map()
@@ -485,7 +509,12 @@ defmodule Sinter.JsonSchema do
   defp simplify_union_property(property), do: property
 
   @spec ensure_object_properties(map()) :: map()
-  defp ensure_object_properties(%{"type" => "object"} = schema) do
+  defp ensure_object_properties(schema) do
+    transform_schema(schema, &ensure_object_properties_local/1)
+  end
+
+  @spec ensure_object_properties_local(map()) :: map()
+  defp ensure_object_properties_local(%{"type" => "object"} = schema) do
     if Map.has_key?(schema, "properties") do
       schema
     else
@@ -493,7 +522,7 @@ defmodule Sinter.JsonSchema do
     end
   end
 
-  defp ensure_object_properties(schema), do: schema
+  defp ensure_object_properties_local(schema), do: schema
 
   defp apply_recursive_strictness(schema) when is_map(schema) do
     schema =
@@ -515,6 +544,131 @@ defmodule Sinter.JsonSchema do
   end
 
   defp apply_recursive_strictness(schema), do: schema
+
+  @spec transform_schema(term(), (map() -> map())) :: term()
+  defp transform_schema(schema, transform) when is_map(schema) do
+    schema
+    |> Enum.reduce(%{}, fn {key, value}, acc ->
+      Map.put(acc, key, transform_schema(value, transform))
+    end)
+    |> transform.()
+  end
+
+  defp transform_schema(schema, transform) when is_list(schema) do
+    Enum.map(schema, &transform_schema(&1, transform))
+  end
+
+  defp transform_schema(schema, _transform), do: schema
+
+  @spec finalize_discriminated_unions(map(), draft()) :: map()
+  defp finalize_discriminated_unions(schema, draft) do
+    definitions_key = union_definition_key(draft)
+    {resolved_schema, definitions} = hoist_discriminated_unions(schema, definitions_key, [])
+
+    if definitions == %{} do
+      resolved_schema
+    else
+      Map.update(resolved_schema, definitions_key, definitions, &Map.merge(&1, definitions))
+    end
+  end
+
+  @spec hoist_discriminated_unions(term(), String.t(), [String.t()]) :: {term(), map()}
+  defp hoist_discriminated_unions(schema, definitions_key, path) when is_map(schema) do
+    case Map.pop(schema, "x-sinter-union-definitions") do
+      {nil, schema_without_unions} ->
+        Enum.reduce(schema_without_unions, {%{}, %{}}, fn {key, value}, {acc_schema, acc_defs} ->
+          {resolved_value, value_defs} =
+            hoist_discriminated_unions(value, definitions_key, path ++ [to_string(key)])
+
+          {Map.put(acc_schema, key, resolved_value), Map.merge(acc_defs, value_defs)}
+        end)
+
+      {variant_definitions, schema_without_unions} ->
+        {resolved_schema, nested_defs} =
+          Enum.reduce(schema_without_unions, {%{}, %{}}, fn {key, value}, {acc_schema, acc_defs} ->
+            {resolved_value, value_defs} =
+              hoist_discriminated_unions(value, definitions_key, path ++ [to_string(key)])
+
+            {Map.put(acc_schema, key, resolved_value), Map.merge(acc_defs, value_defs)}
+          end)
+
+        {resolved_variants, variant_defs} =
+          Enum.reduce(variant_definitions, {[], nested_defs}, fn {variant_key, variant_schema},
+                                                                 {acc_variants, acc_defs} ->
+            variant_path = path ++ ["variants", variant_key]
+
+            {resolved_variant, nested_variant_defs} =
+              hoist_discriminated_unions(variant_schema, definitions_key, variant_path)
+
+            def_name = union_definition_name(path, variant_key)
+
+            variant_entry = {variant_key, resolved_variant, def_name}
+            defs = Map.put(Map.merge(acc_defs, nested_variant_defs), def_name, resolved_variant)
+
+            {[variant_entry | acc_variants], defs}
+          end)
+
+        resolved_variants = Enum.reverse(resolved_variants)
+
+        one_of =
+          Enum.map(resolved_variants, fn {_variant_key, variant_schema, _def_name} ->
+            variant_schema
+          end)
+
+        mapping =
+          Map.new(resolved_variants, fn {variant_key, _variant_schema, def_name} ->
+            {variant_key, "#/#{definitions_key}/#{escape_json_pointer_token(def_name)}"}
+          end)
+
+        discriminator =
+          resolved_schema
+          |> Map.get("discriminator", %{})
+          |> Map.put("mapping", mapping)
+
+        {resolved_schema |> Map.put("discriminator", discriminator) |> Map.put("oneOf", one_of),
+         variant_defs}
+    end
+  end
+
+  defp hoist_discriminated_unions(schema, definitions_key, path) when is_list(schema) do
+    Enum.reduce(schema, {[], %{}}, fn item, {acc_list, acc_defs} ->
+      {resolved_item, item_defs} = hoist_discriminated_unions(item, definitions_key, path)
+      {[resolved_item | acc_list], Map.merge(acc_defs, item_defs)}
+    end)
+    |> then(fn {items, defs} -> {Enum.reverse(items), defs} end)
+  end
+
+  defp hoist_discriminated_unions(schema, _definitions_key, _path), do: {schema, %{}}
+
+  @spec union_definition_key(draft()) :: String.t()
+  defp union_definition_key(:draft7), do: "definitions"
+  defp union_definition_key(:draft2020_12), do: "$defs"
+
+  @spec union_definition_name([String.t()], String.t()) :: String.t()
+  defp union_definition_name(path, variant_key) do
+    path
+    |> Kernel.++([variant_key])
+    |> Enum.map(&sanitize_definition_token/1)
+    |> Enum.join("__")
+  end
+
+  @spec sanitize_definition_token(String.t()) :: String.t()
+  defp sanitize_definition_token(token) do
+    token
+    |> String.replace(~r/[^A-Za-z0-9_]+/u, "_")
+    |> String.trim("_")
+    |> case do
+      "" -> "union"
+      sanitized -> sanitized
+    end
+  end
+
+  @spec escape_json_pointer_token(String.t()) :: String.t()
+  defp escape_json_pointer_token(token) do
+    token
+    |> String.replace("~", "~0")
+    |> String.replace("/", "~1")
+  end
 
   @spec flatten_schema(map()) :: map()
   defp flatten_schema(schema) do
@@ -542,11 +696,9 @@ defmodule Sinter.JsonSchema do
 
   # Metadata and utility functions
 
-  @spec maybe_add_title(map(), String.t() | nil) :: map()
   defp maybe_add_title(schema, nil), do: schema
   defp maybe_add_title(schema, title), do: Map.put(schema, "title", title)
 
-  @spec maybe_add_description(map(), String.t() | nil) :: map()
   defp maybe_add_description(schema, nil), do: schema
   defp maybe_add_description(schema, description), do: Map.put(schema, "description", description)
 

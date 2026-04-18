@@ -1,7 +1,7 @@
 defmodule Sinter.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @source_url "https://github.com/nshkrdotcom/sinter"
 
   def project do
@@ -57,26 +57,26 @@ defmodule Sinter.MixProject do
       # Fast JSON parsing - the blazing fast gift library
       #      {:simdjsone, "~> 0.5.0"},
       # JSON Schema validation engine
-      {:jsv, "~> 0.16.0"},
+      {:jsv, "~> 0.18.1"},
       # Options validation
-      {:nimble_options, "~> 1.1"},
+      {:nimble_options, "~> 1.1.1"},
       #      # Struct transformation library - for client app transformations
       #      {:estructura, "~> 1.9.0"},
 
       # Fallback JSON parser for environments where NIFs cause issues
-      {:jason, "~> 1.4"},
+      {:jason, "~> 1.4.4"},
 
       # Development and testing dependencies
       {:ex_doc, "~> 0.40.1", only: :dev, runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:castore, "~> 1.0", only: :test},
+      {:credo, "~> 1.7.18", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4.7", only: [:dev, :test], runtime: false},
+      {:castore, "~> 1.0.18", only: :test},
       {:excoveralls, "~> 0.18.5", only: :test},
-      {:mix_test_watch, "~> 1.4", only: [:dev, :test], runtime: false},
+      {:mix_test_watch, "~> 1.4.0", only: [:dev, :test], runtime: false},
 
       # Property testing and benchmarking
-      {:stream_data, "~> 1.3", only: [:dev, :test]},
-      {:benchee, "~> 1.5", only: :dev}
+      {:stream_data, "~> 1.3.0", only: [:dev, :test]},
+      {:benchee, "~> 1.5.0", only: :dev}
     ]
   end
 

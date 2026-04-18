@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-17
+
+### Added
+- Validator-driven and structural regression suites covering discriminated-union JSON Schema generation, branch invariants, discriminator mappings, and compile-time variant validation.
+- Compile-time validation for discriminated unions so every variant must define the discriminator field as a matching `:literal`.
+- A focused discriminated-union JSON Schema example plus refreshed example runners and examples documentation.
+
+### Changed
+- Upgraded direct dependencies to their latest available releases, including `jsv` `0.18.1`, `credo` `1.7.18`, and `castore` `1.0.18`.
+- Bumped the package and documentation version references to `0.3.0`.
+
+### Fixed
+- Discriminated union JSON Schema generation now preserves full branch fidelity instead of collapsing variant fields to bare types.
+- Nested object properties, descriptions, aliases, examples, defaults, numeric/string constraints, and strict `additionalProperties` settings are now retained inside discriminated-union branches.
+- Generated discriminator mappings now resolve to concrete definition targets in the emitted schema.
+- Generated discriminated-union schemas now require the discriminator field consistently with Sinter's runtime validator.
+
 ## [0.2.0] - 2026-03-12
 
 ### Added
@@ -75,6 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Full test coverage
 - Documentation and API reference
 
+[0.3.0]: https://github.com/nshkrdotcom/sinter/releases/tag/v0.3.0
 [0.2.0]: https://github.com/nshkrdotcom/sinter/releases/tag/v0.2.0
 [0.1.0]: https://github.com/nshkrdotcom/sinter/releases/tag/v0.1.0
 [0.0.2]: https://github.com/nshkrdotcom/sinter/releases/tag/v0.0.2

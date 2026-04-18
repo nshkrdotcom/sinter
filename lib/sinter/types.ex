@@ -35,7 +35,14 @@ defmodule Sinter.Types do
       {:error, [%Sinter.Error{code: :coercion, ...}]}
   """
 
-  alias Sinter.{Error, Schema, Validator}
+  alias Sinter.{Error, JsonSchema, Schema, Validator}
+
+  @json_schema_metadata_keys [
+    "$schema",
+    "x-sinter-version",
+    "x-sinter-field-count",
+    "x-sinter-created-at"
+  ]
 
   @type primitive_type ::
           :string
@@ -678,18 +685,19 @@ defmodule Sinter.Types do
     variants = Keyword.fetch!(opts, :variants)
 
     variant_schemas =
-      Enum.map(variants, fn {_key, schema} ->
-        generate_variant_json_schema(schema)
+      Enum.map(variants, fn {key, schema} ->
+        {to_string(key), generate_variant_json_schema(schema, discriminator)}
       end)
 
     mapping =
-      Enum.map(variants, fn {key, _schema} ->
-        {to_string(key), "#/definitions/#{key}"}
+      Enum.map(variant_schemas, fn {key, _schema} ->
+        {key, "#/$defs/#{escape_json_pointer_token(key)}"}
       end)
       |> Map.new()
 
     %{
-      "oneOf" => variant_schemas,
+      "$defs" => Map.new(variant_schemas),
+      "oneOf" => Enum.map(variant_schemas, fn {_key, schema} -> schema end),
       "discriminator" => %{
         "propertyName" => to_string(discriminator),
         "mapping" => mapping
@@ -832,29 +840,45 @@ defmodule Sinter.Types do
 
   defp find_variant_by_conversion(_variants, _disc_val), do: nil
 
-  # Helper to generate JSON Schema for a variant (simplified version)
-  @spec generate_variant_json_schema(Schema.t()) :: map()
-  defp generate_variant_json_schema(%Schema{} = schema) do
-    properties =
-      Enum.map(schema.fields, fn {name, field_def} ->
-        {to_string(name), to_json_schema(field_def.type)}
-      end)
-      |> Map.new()
+  @spec generate_variant_json_schema(Schema.t(), atom() | String.t()) :: map()
+  defp generate_variant_json_schema(%Schema{} = schema, discriminator) do
+    schema
+    |> JsonSchema.generate()
+    |> Map.drop(@json_schema_metadata_keys)
+    |> ensure_discriminator_required(schema, discriminator)
+  end
 
-    required =
-      schema.fields
-      |> Enum.filter(fn {_name, field_def} -> field_def.required end)
-      |> Enum.map(fn {name, _} -> to_string(name) end)
+  @spec ensure_discriminator_required(map(), Schema.t(), atom() | String.t()) :: map()
+  defp ensure_discriminator_required(json_schema, schema, discriminator) do
+    case discriminator_property_name(schema, discriminator) do
+      nil ->
+        json_schema
 
-    base = %{
-      "type" => "object",
-      "properties" => properties
-    }
+      property_name ->
+        required =
+          json_schema
+          |> Map.get("required", [])
+          |> Kernel.++([property_name])
+          |> Enum.uniq()
 
-    if required == [] do
-      base
-    else
-      Map.put(base, "required", required)
+        Map.put(json_schema, "required", required)
     end
+  end
+
+  @spec discriminator_property_name(Schema.t(), atom() | String.t()) :: String.t() | nil
+  defp discriminator_property_name(%Schema{} = schema, discriminator) do
+    discriminator_key = to_string(discriminator)
+
+    case Map.get(schema.fields, discriminator_key) do
+      nil -> nil
+      field_def -> field_def.alias || discriminator_key
+    end
+  end
+
+  @spec escape_json_pointer_token(String.t()) :: String.t()
+  defp escape_json_pointer_token(token) do
+    token
+    |> String.replace("~", "~0")
+    |> String.replace("/", "~1")
   end
 end

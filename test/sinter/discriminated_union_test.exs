@@ -34,6 +34,65 @@ defmodule Sinter.DiscriminatedUnionTest do
   end
 
   describe "discriminated union type validation" do
+    test "requires each variant to define the discriminator field" do
+      assert_raise ArgumentError,
+                   ~r/must define discriminator field "type"/,
+                   fn ->
+                     Schema.define([
+                       {:detail,
+                        {:discriminated_union,
+                         [
+                           discriminator: "type",
+                           variants: %{
+                             "broken" => Schema.define([{:value, :string, [required: true]}])
+                           }
+                         ]}, [required: true]}
+                     ])
+                   end
+    end
+
+    test "requires each variant discriminator field to use a literal type" do
+      assert_raise ArgumentError,
+                   ~r/discriminator field "type" must be a :literal/,
+                   fn ->
+                     Schema.define([
+                       {:detail,
+                        {:discriminated_union,
+                         [
+                           discriminator: "type",
+                           variants: %{
+                             "broken" =>
+                               Schema.define([
+                                 {:type, :string, [required: true]},
+                                 {:value, :string, [required: true]}
+                               ])
+                           }
+                         ]}, [required: true]}
+                     ])
+                   end
+    end
+
+    test "requires each variant discriminator literal to match the variant key" do
+      assert_raise ArgumentError,
+                   ~r/must use literal discriminator value "broken"/,
+                   fn ->
+                     Schema.define([
+                       {:detail,
+                        {:discriminated_union,
+                         [
+                           discriminator: "type",
+                           variants: %{
+                             "broken" =>
+                               Schema.define([
+                                 {:type, {:literal, "other"}, [required: true]},
+                                 {:value, :string, [required: true]}
+                               ])
+                           }
+                         ]}, [required: true]}
+                     ])
+                   end
+    end
+
     test "validates correct encoded_text variant" do
       union_type =
         {:discriminated_union,

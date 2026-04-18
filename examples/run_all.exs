@@ -7,10 +7,13 @@ IO.puts("🚀 Running All Sinter Examples")
 IO.puts("===============================")
 IO.puts("")
 
+examples_dir = __DIR__
+
 # List of examples in recommended order
 examples = [
   {"basic_usage.exs", "Basic Usage Examples"},
   {"readme_comprehensive.exs", "Complete README Coverage"},
+  {"discriminated_union_json_schema.exs", "Discriminated Union JSON Schema"},
   {"json_schema_generation.exs", "JSON Schema Generation"},
   {"advanced_validation.exs", "Advanced Validation Patterns"},
   {"dspy_integration.exs", "DSPy Integration Examples"}
@@ -29,7 +32,7 @@ Enum.each(examples, fn {file, description} ->
 
   try do
     # Execute the example file and capture output
-    {output, exit_code} = System.cmd("elixir", [file], stderr_to_stdout: true)
+    {output, exit_code} = System.cmd("elixir", [file], cd: examples_dir, stderr_to_stdout: true)
 
     end_time = System.monotonic_time(:millisecond)
     duration = end_time - start_time
@@ -40,6 +43,7 @@ Enum.each(examples, fn {file, description} ->
         IO.puts(output)
         IO.puts("\n✅ COMPLETED SUCCESSFULLY (#{duration}ms)")
         Agent.update(results_agent, fn results -> results ++ [{file, :success, duration}] end)
+
       _ ->
         # Show error output for failures
         IO.puts("❌ EXECUTION FAILED (#{duration}ms)")

@@ -100,7 +100,18 @@ Focuses specifically on JSON Schema generation capabilities:
 - Schema validation and compatibility checking
 - Performance benchmarking
 
-### 6. `run_all.sh`
+### 6. `discriminated_union_json_schema.exs`
+**Focused Discriminated Union JSON Schema Coverage**
+
+Shows the `0.3.0` discriminated-union JSON Schema behavior in a single script:
+
+- Runtime validation for discriminated unions with aliases and nested strict objects
+- Generated `oneOf` branches preserving descriptions, examples, defaults, and constraints
+- Discriminator mappings resolving to concrete `$defs` / `definitions` targets
+- Validation of data against the generated schema with `JSV`
+- Provider-optimized output for OpenAI
+
+### 7. `run_all.sh`
 **Shell Runner (Recommended)**
 
 Runs the full example suite from any working directory:
@@ -109,7 +120,7 @@ Runs the full example suite from any working directory:
 examples/run_all.sh
 ```
 
-### 7. `run_all.exs`
+### 8. `run_all.exs`
 **Complete Test Suite (Elixir)**
 
 Executes all examples in sequence with detailed reporting:
@@ -147,6 +158,7 @@ Executes all examples in sequence with detailed reporting:
 | `JsonSchema.generate/2` | ✅ | ✅ | ✅ | - | ✅ |
 | `JsonSchema.for_provider/3` | ✅ | ✅ | ✅ | - | ✅ |
 | Provider optimizations | ✅ | ✅ | ✅ | - | ✅ |
+| Discriminated unions and mappings | ✅ | - | - | - | ✅ |
 | **Advanced Features** | - | - | - | ✅ | - |
 | Post-validation hooks | ✅ | - | - | ✅ | - |
 | Batch validation | - | - | - | ✅ | - |
@@ -191,6 +203,11 @@ elixir advanced_validation.exs
 **Working with JSON Schema generation?**
 ```bash
 elixir json_schema_generation.exs
+```
+
+**Working with discriminated unions or branch fidelity?**
+```bash
+elixir discriminated_union_json_schema.exs
 ```
 
 ## 🔧 Customizing Examples

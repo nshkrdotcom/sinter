@@ -158,6 +158,11 @@ value in the input map, finds the matching variant, and validates against that
 variant's schema. If the discriminator field is missing or its value does not
 match any variant key, validation fails with a descriptive error.
 
+Each variant must define the discriminator field itself, and that field must use
+`{:literal, value}` with a value matching the variant key. Sinter validates this
+when the schema is defined, so malformed discriminated unions fail fast instead
+of producing ambiguous runtime behavior.
+
 ## Field Options
 
 Every field accepts the following options as a keyword list:

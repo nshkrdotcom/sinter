@@ -30,7 +30,7 @@ json_schema = Sinter.JsonSchema.generate(schema)
 #   },
 #   "required" => ["name"],
 #   "additionalProperties" => true,
-#   "x-sinter-version" => "0.2.0",
+#   "x-sinter-version" => "0.3.0",
 #   "x-sinter-field-count" => 3,
 #   "x-sinter-created-at" => "2026-03-12T..."
 # }
@@ -264,13 +264,68 @@ schema = Sinter.Schema.define([
 
 json_schema = Sinter.JsonSchema.generate(schema)
 
-json_schema["x-sinter-version"]     #=> "0.2.0"
+json_schema["x-sinter-version"]     #=> "0.3.0"
 json_schema["x-sinter-field-count"] #=> 2
 json_schema["x-sinter-created-at"]  #=> "2026-03-12T12:00:00.000000Z"
 ```
 
 These keys use the `x-` extension prefix and are ignored by standard JSON Schema
 validators.
+
+## Discriminated Unions
+
+Discriminated unions are emitted as `oneOf` branches with a JSON Schema
+`discriminator`. Each branch keeps the same detail you would get from generating
+that variant as a standalone schema: nested object properties, aliases,
+constraints, descriptions, defaults, examples, and strict
+`additionalProperties` settings are all preserved.
+
+```elixir
+text_variant = Sinter.Schema.define([
+  {:type, {:literal, "text"}, [required: true]},
+  {:content, :string, [required: true, min_length: 1]}
+])
+
+image_variant = Sinter.Schema.define([
+  {:type, {:literal, "image"}, [required: true]},
+  {:url, :string, [required: true]},
+  {:caption, :string, [optional: true]}
+], strict: true)
+
+schema = Sinter.Schema.define([
+  {:chunk,
+   {:discriminated_union,
+    [
+      discriminator: "type",
+      variants: %{
+        "text" => text_variant,
+        "image" => image_variant
+      }
+    ]}, [required: true]}
+])
+
+json_schema = Sinter.JsonSchema.generate(schema)
+chunk_schema = json_schema["properties"]["chunk"]
+```
+
+The discriminator field is always listed as required for each branch, even if a
+variant marks it optional, so generated JSON Schema matches Sinter's runtime
+selection logic.
+
+Sinter also emits definition entries for discriminator mappings. In Draft
+2020-12 output these live under `$defs`; in Draft 7 output they live under
+`definitions`.
+
+```elixir
+chunk_schema["discriminator"]["mapping"]
+#=> %{
+#=>   "image" => "#/$defs/properties__chunk__image",
+#=>   "text" => "#/$defs/properties__chunk__text"
+#=> }
+
+json_schema["$defs"]["properties__chunk__text"]["properties"]["content"]
+#=> %{"minLength" => 1, "type" => "string"}
+```
 
 ## Field Aliases
 

@@ -503,16 +503,20 @@ defmodule Sinter.Schema do
     end
 
     variants = Keyword.fetch!(opts, :variants)
+    discriminator = Keyword.fetch!(opts, :discriminator) |> to_string()
 
     unless is_map(variants) do
       raise ArgumentError, "discriminated_union :variants must be a map"
     end
 
     # Validate each variant schema
-    Enum.each(variants, fn {_key, schema} ->
+    Enum.each(variants, fn {variant_key, schema} ->
       case schema do
-        %__MODULE__{} -> :ok
-        _ -> raise ArgumentError, "discriminated_union variant must be a Schema.t()"
+        %__MODULE__{} ->
+          validate_discriminated_union_variant!(schema, discriminator, variant_key)
+
+        _ ->
+          raise ArgumentError, "discriminated_union variant must be a Schema.t()"
       end
     end)
 
@@ -533,6 +537,32 @@ defmodule Sinter.Schema do
     end
 
     validated_opts
+  end
+
+  @spec validate_discriminated_union_variant!(t(), String.t(), atom() | String.t()) :: :ok
+  defp validate_discriminated_union_variant!(%__MODULE__{} = schema, discriminator, variant_key) do
+    case Map.get(schema.fields, discriminator) do
+      nil ->
+        raise ArgumentError,
+              "discriminated_union variant #{inspect(variant_key)} must define discriminator field #{inspect(discriminator)}"
+
+      %{type: {:literal, literal_value}} ->
+        if discriminator_literal_matches_variant?(literal_value, variant_key) do
+          :ok
+        else
+          raise ArgumentError,
+                "discriminated_union variant #{inspect(variant_key)} must use literal discriminator value #{inspect(variant_key)}"
+        end
+
+      _field_def ->
+        raise ArgumentError,
+              "discriminated_union variant #{inspect(variant_key)} discriminator field #{inspect(discriminator)} must be a :literal"
+    end
+  end
+
+  @spec discriminator_literal_matches_variant?(term(), atom() | String.t()) :: boolean()
+  defp discriminator_literal_matches_variant?(literal_value, variant_key) do
+    literal_value == variant_key or to_string(literal_value) == to_string(variant_key)
   end
 
   @spec normalize_field_spec(field_spec()) :: field_definition()

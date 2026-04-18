@@ -509,6 +509,33 @@ defmodule Sinter.JsonSchemaTest do
       end
     end
 
+    test "applies provider optimizations inside discriminated union variants" do
+      variant =
+        Schema.define([
+          {:type, {:literal, "complex"}, [required: true]},
+          {:value, {:union, [:string, :integer, :float, :boolean, :atom]}, [required: true]}
+        ])
+
+      schema =
+        Schema.define([
+          {:item,
+           {:discriminated_union,
+            [
+              discriminator: "type",
+              variants: %{"complex" => variant}
+            ]}, [required: true]}
+        ])
+
+      openai_schema = JsonSchema.for_provider(schema, :openai)
+
+      [variant_schema] = openai_schema["properties"]["item"]["oneOf"]
+      value_schema = variant_schema["properties"]["value"]
+
+      if Map.has_key?(value_schema, "oneOf") do
+        assert length(value_schema["oneOf"]) <= 3
+      end
+    end
+
     test "ensures object properties for Anthropic" do
       # Create minimal object schema
       schema = Schema.define([], title: "Empty Schema")

@@ -122,6 +122,42 @@ IO.puts("✓ Provider draft: #{openai_schema["$schema"]}")
 
 :ok = Sinter.JsonSchema.validate_schema(json_schema)
 IO.puts("✓ JSON Schema validated")
+
+text_chunk =
+  Sinter.Schema.define([
+    {:type, {:literal, "text"}, [required: true]},
+    {:content, :string, [required: true, min_length: 1]}
+  ])
+
+image_chunk =
+  Sinter.Schema.define(
+    [
+      {:type, {:literal, "image"}, [required: true]},
+      {:url, :string, [required: true]},
+      {:alt, :string, [optional: true]}
+    ],
+    strict: true
+  )
+
+chunk_envelope =
+  Sinter.Schema.define([
+    {:chunk,
+     {:discriminated_union,
+      [
+        discriminator: "type",
+        variants: %{
+          "text" => text_chunk,
+          "image" => image_chunk
+        }
+      ]}, [required: true]}
+  ])
+
+chunk_json_schema = Sinter.JsonSchema.generate(chunk_envelope)
+chunk_schema = chunk_json_schema["properties"]["chunk"]
+
+IO.puts("✓ Discriminated union schema generated")
+IO.puts("  Branches: #{length(chunk_schema["oneOf"])}")
+IO.puts("  Mapping keys: #{inspect(Map.keys(chunk_schema["discriminator"]["mapping"]))}")
 IO.puts("")
 
 # ============================================================================

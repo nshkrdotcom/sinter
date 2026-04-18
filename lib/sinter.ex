@@ -574,7 +574,13 @@ defmodule Sinter do
     merged = %{
       title: find_first_non_nil(configs, :title),
       description: find_first_non_nil(configs, :description),
-      strict: find_last_non_nil(configs, :strict, false),
+      strict:
+        Enum.reduce(configs, false, fn config, strict ->
+          case Map.get(config, :strict) do
+            nil -> strict
+            value -> value
+          end
+        end),
       post_validate: find_first_non_nil(configs, :post_validate)
     }
 
@@ -590,19 +596,6 @@ defmodule Sinter do
     configs
     |> Enum.map(&Map.get(&1, key))
     |> Enum.find(&(not is_nil(&1)))
-  end
-
-  # Helper to find last non-nil value for a key across configs, with default
-  @spec find_last_non_nil([map()], atom(), term()) :: term()
-  defp find_last_non_nil(configs, key, default) do
-    configs
-    |> Enum.map(&Map.get(&1, key))
-    |> Enum.reverse()
-    |> Enum.find(&(not is_nil(&1)))
-    |> case do
-      nil -> default
-      value -> value
-    end
   end
 
   defp normalize_example(%_{} = struct) do
