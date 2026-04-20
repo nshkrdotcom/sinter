@@ -57,7 +57,7 @@ defmodule Sinter.MixProject do
       # Fast JSON parsing - the blazing fast gift library
       #      {:simdjsone, "~> 0.5.0"},
       # JSON Schema validation engine
-      {:jsv, "~> 0.18.1"},
+      {:jsv, "~> 0.18.2"},
       # Options validation
       {:nimble_options, "~> 1.1.1"},
       #      # Struct transformation library - for client app transformations
