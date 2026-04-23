@@ -30,7 +30,7 @@ json_schema = Sinter.JsonSchema.generate(schema)
 #   },
 #   "required" => ["name"],
 #   "additionalProperties" => true,
-#   "x-sinter-version" => "0.3.0",
+#   "x-sinter-version" => "0.3.1",
 #   "x-sinter-field-count" => 3,
 #   "x-sinter-created-at" => "2026-03-12T..."
 # }
@@ -264,7 +264,7 @@ schema = Sinter.Schema.define([
 
 json_schema = Sinter.JsonSchema.generate(schema)
 
-json_schema["x-sinter-version"]     #=> "0.3.0"
+json_schema["x-sinter-version"]     #=> "0.3.1"
 json_schema["x-sinter-field-count"] #=> 2
 json_schema["x-sinter-created-at"]  #=> "2026-03-12T12:00:00.000000Z"
 ```

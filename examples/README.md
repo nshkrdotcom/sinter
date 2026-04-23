@@ -103,7 +103,7 @@ Focuses specifically on JSON Schema generation capabilities:
 ### 6. `discriminated_union_json_schema.exs`
 **Focused Discriminated Union JSON Schema Coverage**
 
-Shows the `0.3.0` discriminated-union JSON Schema behavior in a single script:
+Shows the `0.3.1` discriminated-union JSON Schema behavior in a single script:
 
 - Runtime validation for discriminated unions with aliases and nested strict objects
 - Generated `oneOf` branches preserving descriptions, examples, defaults, and constraints
