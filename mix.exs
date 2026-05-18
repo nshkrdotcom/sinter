@@ -57,20 +57,20 @@ defmodule Sinter.MixProject do
       # Fast JSON parsing - the blazing fast gift library
       #      {:simdjsone, "~> 0.5.0"},
       # JSON Schema validation engine
-      {:jsv, "~> 0.18.3"},
+      {:jsv, "~> 0.19.1"},
       # Options validation
       {:nimble_options, "~> 1.1.1"},
       #      # Struct transformation library - for client app transformations
       #      {:estructura, "~> 1.9.0"},
 
       # Fallback JSON parser for environments where NIFs cause issues
-      {:jason, "~> 1.4.4"},
+      {:jason, "~> 1.4.5"},
 
       # Development and testing dependencies
-      {:ex_doc, "~> 0.40.1", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.40.2", only: :dev, runtime: false},
       {:credo, "~> 1.7.18", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4.7", only: [:dev, :test], runtime: false},
-      {:castore, "~> 1.0.18", only: :test},
+      {:castore, "~> 1.0.19", only: :test},
       {:excoveralls, "~> 0.18.5", only: :test},
       {:mix_test_watch, "~> 1.4.0", only: [:dev, :test], runtime: false},
 
