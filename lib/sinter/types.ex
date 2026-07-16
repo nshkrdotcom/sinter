@@ -418,10 +418,10 @@ defmodule Sinter.Types do
   def coerce(type_spec, value)
 
   # String coercion
+  def coerce(:string, value) when is_boolean(value), do: {:ok, to_string(value)}
   def coerce(:string, value) when is_atom(value), do: {:ok, Atom.to_string(value)}
   def coerce(:string, value) when is_integer(value), do: {:ok, Integer.to_string(value)}
   def coerce(:string, value) when is_float(value), do: {:ok, Float.to_string(value)}
-  def coerce(:string, value) when is_boolean(value), do: {:ok, to_string(value)}
   def coerce(:string, value) when is_binary(value), do: {:ok, value}
 
   # Integer coercion

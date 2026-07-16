@@ -102,7 +102,7 @@ defmodule Sinter.Transform do
       formatter ->
         apply_format(formatter, value)
 
-      is_map(value) or match?(%_{}, value) ->
+      is_map(value) ->
         transform(value, opts)
 
       is_list(value) ->

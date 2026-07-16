@@ -708,6 +708,5 @@ defmodule Sinter.Validator do
   defp type_name(value) when is_atom(value), do: "atom"
   defp type_name(value) when is_list(value), do: "list"
   defp type_name(value) when is_tuple(value), do: "tuple"
-  defp type_name(value) when is_map(value), do: "map"
   defp type_name(_), do: "unknown"
 end
