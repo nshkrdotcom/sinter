@@ -76,9 +76,4 @@ jobs:
         draft: false
         prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
 
-    - name: Publish to Hex (if not prerelease)
-      if: ${{ !contains(github.ref, 'alpha') && !contains(github.ref, 'beta') && !contains(github.ref, 'rc') }}
-      run: |
-        mix hex.publish --yes
-      env:
-        HEX_API_KEY: ${{ secrets.HEX_API_KEY }} 
+    # Hex publication is performed separately after release checks.

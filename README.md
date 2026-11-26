@@ -31,7 +31,7 @@ Add `sinter` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:sinter, "~> 0.3.2"}
+    {:sinter, "~> 0.3.3"}
   ]
 end
 ```

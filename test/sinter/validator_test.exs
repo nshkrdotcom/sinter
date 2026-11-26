@@ -882,7 +882,7 @@ defmodule Sinter.ValidatorTest do
       results = Validator.validate_stream(schema, data_stream)
 
       # Results should be enumerable (a stream)
-      assert Enumerable.impl_for(results) != nil
+      assert %Stream{} = results
       validated_list = Enum.take(results, 10)
 
       assert length(validated_list) == 10
